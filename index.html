@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="קפיצות גדילה"/>
-  <style>body{margin:0;padding:0;background:#0a0f1e}#root{min-height:100vh}</style>
+  <style>body{margin:0;padding:0;background:#0a0f1e}#root{min-height:100vh}.light-body{background:#faf8f5!important}</style>
 </head>
 <body>
   <div id="root"></div>
@@ -133,7 +133,7 @@
     function getWeeks(d){return Math.max(0,Math.min(84,Math.floor((Date.now()-new Date(d))/(7*24*60*60*1000))));}
 
     const DARK={bg:"linear-gradient(160deg,#0a0f1e 0%,#0f172a 45%,#1a0a2e 100%)",card:"rgba(255,255,255,.07)",cardB:"rgba(255,255,255,.12)",text:"#f8fafc",sub:"#475569",muted:"#2d3748",tabA:"rgba(99,102,241,.32)",tabAB:"#6366f1",tabAC:"#a5b4fc",tabI:"rgba(255,255,255,.05)",tabIB:"rgba(255,255,255,.09)",tabIC:"#475569",tlBg:"rgba(255,255,255,.05)",tlB:"rgba(255,255,255,.08)",nav:"rgba(255,255,255,.08)",navB:"rgba(255,255,255,.1)",allBg:"rgba(255,255,255,.04)",allB:"rgba(255,255,255,.07)",rowA:"rgba(99,102,241,.18)",rowAB:"#6366f1",rowI:"rgba(255,255,255,.03)",rowIB:"rgba(255,255,255,.05)",lgBg:"rgba(255,255,255,.03)",lgB:"rgba(255,255,255,.06)",inBg:"rgba(255,255,255,.09)",inB:"rgba(255,255,255,.18)",inC:"#f1f5f9",infoBg:"rgba(99,102,241,.12)",infoC:"#a5b4fc",ds:"dark",h1:"#f8fafc",h1s:"0 0 30px rgba(196,181,253,.4)",glow:"drop-shadow(0 0 16px rgba(196,181,253,.7))"};
-    const LIGHT={bg:"linear-gradient(160deg,#f0f4ff 0%,#e8f0fe 45%,#f5f0ff 100%)",card:"rgba(255,255,255,.9)",cardB:"rgba(0,0,0,.1)",text:"#1e293b",sub:"#64748b",muted:"#94a3b8",tabA:"rgba(99,102,241,.15)",tabAB:"#6366f1",tabAC:"#4f46e5",tabI:"rgba(0,0,0,.04)",tabIB:"rgba(0,0,0,.1)",tabIC:"#64748b",tlBg:"rgba(255,255,255,.7)",tlB:"rgba(0,0,0,.08)",nav:"rgba(0,0,0,.06)",navB:"rgba(0,0,0,.1)",allBg:"rgba(255,255,255,.6)",allB:"rgba(0,0,0,.07)",rowA:"rgba(99,102,241,.1)",rowAB:"#6366f1",rowI:"rgba(0,0,0,.02)",rowIB:"rgba(0,0,0,.06)",lgBg:"rgba(255,255,255,.7)",lgB:"rgba(0,0,0,.08)",inBg:"rgba(255,255,255,.95)",inB:"rgba(0,0,0,.15)",inC:"#1e293b",infoBg:"rgba(99,102,241,.08)",infoC:"#4f46e5",ds:"light",h1:"#1e293b",h1s:"none",glow:"none"};
+    const LIGHT={bg:"#faf8f5",card:"rgba(255,255,255,.8)",cardB:"rgba(99,102,241,.15)",text:"#1e293b",sub:"#64748b",muted:"#94a3b8",tabA:"rgba(99,102,241,.12)",tabAB:"#6366f1",tabAC:"#4f46e5",tabI:"rgba(0,0,0,.04)",tabIB:"rgba(0,0,0,.08)",tabIC:"#94a3b8",tlBg:"rgba(255,255,255,.7)",tlB:"rgba(0,0,0,.06)",nav:"rgba(255,255,255,.7)",navB:"rgba(0,0,0,.08)",allBg:"rgba(255,255,255,.6)",allB:"rgba(0,0,0,.06)",rowA:"rgba(99,102,241,.08)",rowAB:"#6366f1",rowI:"rgba(255,255,255,.5)",rowIB:"rgba(0,0,0,.04)",lgBg:"rgba(255,255,255,.6)",lgB:"rgba(0,0,0,.06)",inBg:"rgba(255,255,255,.9)",inB:"rgba(0,0,0,.1)",inC:"#1e293b",infoBg:"rgba(99,102,241,.06)",infoC:"#4338ca",ds:"light",h1:"#1e293b",h1s:"none",glow:"none"};
 
     const CFG={
       sunny:   {label:"שבוע שקט",         icon:"☀️", mood:"נינוח ומאושר",   g1:"#d1fae5",g2:"#ecfdf5",accent:"#10b981",text:"#064e3b"},
@@ -146,8 +146,20 @@
     const STARS=Array.from({length:50},()=>({x:Math.random()*100,y:Math.random()*100,sz:Math.random()*2+.5,d:Math.random()*4+2,o:Math.random()*.4+.08}));
 
     function Stars({isDark}){
-      if(!isDark)return null;
-      return <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>{STARS.map((s,i)=><div key={i} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,width:s.sz,height:s.sz,borderRadius:"50%",background:"white",opacity:s.o,animation:`twinkle ${s.d}s ease-in-out infinite alternate`,animationDelay:`${i*.09}s`}}/>)}</div>;
+      if(isDark){
+        return <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>{STARS.map((s,i)=><div key={i} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,width:s.sz,height:s.sz,borderRadius:"50%",background:"white",opacity:s.o,animation:`twinkle ${s.d}s ease-in-out infinite alternate`,animationDelay:`${i*.09}s`}}/>)}</div>;
+      }
+      // Light mode: soft pastel blob shapes
+      const blobs=[
+        {x:-10,y:-5,w:340,h:300,c:"rgba(196,181,253,.35)"},
+        {x:55,y:5,w:280,h:260,c:"rgba(147,197,253,.3)"},
+        {x:-5,y:45,w:220,h:200,c:"rgba(252,211,77,.2)"},
+        {x:60,y:55,w:300,h:280,c:"rgba(167,243,208,.25)"},
+        {x:20,y:80,w:350,h:300,c:"rgba(251,207,232,.3)"},
+      ];
+      return <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+        {blobs.map((b,i)=><div key={i} style={{position:"absolute",left:`${b.x}%`,top:`${b.y}%`,width:b.w,height:b.h,borderRadius:"50%",background:b.c,filter:"blur(60px)",animation:`twinkle ${4+i}s ease-in-out infinite alternate`,animationDelay:`${i*.7}s`}}/>)}
+      </div>;
     }
 
     function Timeline({cur,disp,onClick}){
@@ -224,16 +236,25 @@
     }
 
     function ShareButton({cur,disp}){
+      const [copied,setCopied]=useState(false);
       const {status,leap}=WEEK_MAP[Math.max(0,Math.min(84,disp??0))];
-      const doShare=()=>{
+      const doShare=async()=>{
         const cfg=CFG[status];
         const leapTxt=leap?`${leap.emoji} ${leap.name}`:"שבוע שקט";
         const text=`אנחנו בשבוע ${disp} – ${cfg.icon} ${cfg.label}!\n${leapTxt}\n\nבדקו מה השבוע אצלכם 👇\nhttps://nraybi.github.io/wonder-weeks/`;
-        if(navigator.share)navigator.share({title:"קפיצות הגדילה",text});
-        else navigator.clipboard.writeText(text).then(()=>alert("הועתק ללוח!"));
+        try {
+          if(navigator.share){await navigator.share({title:"קפיצות הגדילה",text});}
+          else {await navigator.clipboard.writeText(text);setCopied(true);setTimeout(()=>setCopied(false),2000);}
+        } catch(e) {
+          try{await navigator.clipboard.writeText(text);setCopied(true);setTimeout(()=>setCopied(false),2000);}
+          catch(e2){alert(text);}
+        }
       };
-      return <button onClick={doShare} style={{width:"100%",padding:"11px 0",border:"1px solid rgba(99,102,241,.4)",borderRadius:13,background:"rgba(99,102,241,.15)",color:"#a5b4fc",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s"}}>
-        {navigator.share?"📤 שתף עדכון עם בן/בת הזוג":"📋 העתק עדכון"}
+      return <button onClick={doShare} title="שתף" style={{padding:11,background:copied?"rgba(16,185,129,.25)":"rgba(99,102,241,.2)",border:`1px solid ${copied?"rgba(16,185,129,.5)":"rgba(99,102,241,.4)"}`,borderRadius:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+        {copied
+          ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        }
       </button>;
     }
 
@@ -245,7 +266,7 @@
       const [anim,setAnim]=useState(null);
       const [ts,setTs]=useState(null);
       const [ds,setDs]=useState(null);
-      const [isDark,setIsDark]=useState(()=>localStorage.getItem("ww_theme")!=="light");
+      const [isDark,setIsDark]=useState(()=>{const dark=localStorage.getItem("ww_theme")!=="light";document.body.style.background=dark?'#0a0f1e':'#faf8f5';return dark;});
       const T=isDark?DARK:LIGHT;
       const toggleTheme=()=>setIsDark(d=>{const n=!d;localStorage.setItem("ww_theme",n?"dark":"light");return n;});
       const today=new Date().toISOString().split("T")[0];
@@ -260,7 +281,7 @@
         <div style={{position:"relative",zIndex:1,maxWidth:430,margin:"0 auto",padding:"20px 16px 48px",display:"flex",flexDirection:"column",gap:15,animation:"fadeUp .5s ease"}}>
 
           <div style={{textAlign:"center",padding:"10px 0 2px",position:"relative"}}>
-            <button onClick={toggleTheme} style={{position:"absolute",left:0,top:10,background:"none",border:"none",cursor:"pointer",fontSize:20,opacity:.7,padding:4}}>{isDark?"☀️":"🌙"}</button>
+            <button onClick={toggleTheme} style={{position:"absolute",left:0,top:10,background:"none",border:"none",cursor:"pointer",fontSize:20,opacity:.7,padding:4,zIndex:10}}>{isDark?"☀️":"🌙"}</button>
             <div style={{fontSize:46,marginBottom:4,filter:T.glow}}>🌙</div>
             <h1 style={{color:T.h1,fontSize:27,fontWeight:900,margin:0,letterSpacing:"-0.03em",textShadow:T.h1s}}>קפיצות הגדילה</h1>
             <p style={{color:T.sub,fontSize:13,margin:"5px 0 0"}}>Wonder Weeks · מה קורה לתינוק שלך עכשיו</p>
@@ -300,11 +321,9 @@
                 <Card weekNum={disp} isPast={disp<cur} isCurrent={disp===cur}/>
               </div>
               <div style={{display:"flex",gap:9,alignItems:"center"}}>
-                <button onClick={()=>go(-1)} disabled={disp<=0} style={{flex:1,padding:11,background:T.nav,border:`1px solid ${T.navB}`,borderRadius:13,color:disp>0?T.text:T.sub,fontSize:14,fontWeight:700,cursor:disp>0?"pointer":"not-allowed",transition:"background .15s"}}>← קודם</button>
-                <button onClick={()=>setOffset(0)} style={{padding:"11px 13px",background:offset===0?T.tabA:T.nav,border:`1px solid ${offset===0?T.tabAB:T.navB}`,borderRadius:13,color:offset===0?T.tabAC:T.text,fontSize:12,fontWeight:800,cursor:"pointer",transition:"all .15s"}}>היום</button>
-                <button onClick={()=>go(1)} disabled={disp>=84} style={{flex:1,padding:11,background:T.nav,border:`1px solid ${T.navB}`,borderRadius:13,color:disp<84?T.text:T.sub,fontSize:14,fontWeight:700,cursor:disp<84?"pointer":"not-allowed",transition:"background .15s"}}>הבא →</button>
+                <button onClick={()=>setOffset(0)} style={{flex:1,padding:12,background:offset===0?T.tabA:T.nav,border:`1px solid ${offset===0?T.tabAB:T.navB}`,borderRadius:13,color:offset===0?T.tabAC:T.text,fontSize:14,fontWeight:800,cursor:"pointer",transition:"all .15s"}}>חזור להיום</button>
+                <ShareButton cur={cur} disp={disp}/>
               </div>
-              <ShareButton cur={cur} disp={disp}/>
               <div style={{textAlign:"center",color:T.muted,fontSize:11}}>← גלוש שמאלה לשבוע הבא · ימינה לשבוע הקודם →</div>
             </>}
 
