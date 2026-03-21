@@ -1,4 +1,4 @@
-const CACHE = "ww-v1";
+const CACHE = "ww-v2";
 const ASSETS = [
   "/wonder-weeks/",
   "/wonder-weeks/index.html",
