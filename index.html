@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>קפיצות הגדילה</title>
+  <meta name="description" content="Wonder Weeks – מה קורה לתינוק שלך עכשיו"/>
+  <meta name="theme-color" content="#0a0f1e"/>
+  <style>
+    body { margin:0; padding:0; background:#0a0f1e; }
+    #root { min-height:100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useRef, useCallback } = React;
+
+    const LEAPS = [
+      { leap:1, name:"עולם התחושות", emoji:"✨", isBig:false,
+        restlessStart:4, restlessEnd:4, peakStart:5, peakEnd:5, skillsStart:6, skillsEnd:6,
+        description:"המוח מעבד לפתע מידע חושי בצורה חדשה לגמרי. ריחות, אורות, מגע – הכל מציף ומרגש ומבהיל.",
+        skills:"עוקב בעיניים אחרי פנים, מגיב לקולות מוכרים, מחייך חיוך חברתי ראשון",
+        tip:"חיבוק צמוד, עיניים בגובה עיניו, קול רך וחם. הקרבה שלך היא העולם שלו." },
+      { leap:2, name:"עולם הדפוסים", emoji:"🔷", isBig:false,
+        restlessStart:7, restlessEnd:7, peakStart:8, peakEnd:8, skillsStart:9, skillsEnd:10,
+        description:"הוא מתחיל לזהות דפוסים חוזרים – פנים, קולות, קצב. העולם מתחיל להסתדר.",
+        skills:"מחייך חיוך חברתי, עוקב אחר עצמים נעים, מקשיב לשינויי קצב",
+        tip:"שירים עם חזרות, הרבה שיחה ישירה אליו, גרימות פנים מוגזמות ומשעשעות." },
+      { leap:3, name:"עולם המעברים", emoji:"🌊", isBig:false,
+        restlessStart:12, restlessEnd:12, peakStart:12, peakEnd:12, skillsStart:13, skillsEnd:13,
+        description:"תנועה רצופה, שינויי צליל – הכל נתפס כרצף ולא כקפיצות נפרדות. מרתק ומבלבל.",
+        skills:"מסתכל על ידיו בעניין, מנסה להגיע לעצמים, מגביה ראש ליד בבטן",
+        tip:"נדנדה עדינה, תנועות רכות, מוזיקה עם עליות וירידות. אמבטיה חמימה עם תנועות מים – כל מעבר חלק מרגיע ומלמד." },
+      { leap:4, name:"עולם האירועים", emoji:"🎬", isBig:true,
+        restlessStart:15, restlessEnd:16, peakStart:17, peakEnd:19, skillsStart:20, skillsEnd:21,
+        description:"'רגרסיית השינה של 4 חודשים' – זה בדיוק זה! הוא גילה שפעולות יוצרות תוצאות. העולם השתנה לו לגמרי.",
+        skills:"מחפש עצמים שנפלו, צוחק בקול, מתחיל להתגלגל, אוחז עצמים",
+        tip:"משחקי סיבה ותוצאה (לחיצה→קול), שיר קוקו, הגב בעקביות לקריאותיו." },
+      { leap:5, name:"עולם היחסים", emoji:"🔗", isBig:true,
+        restlessStart:23, restlessEnd:24, peakStart:26, peakEnd:26, skillsStart:27, skillsEnd:28,
+        description:"מרחק, כיוון, גודל, מהירות – הוא מבין שאתה יכול להתרחק ממנו. חרדת הנטישה מתחילה.",
+        skills:"זוחל, עומד בתמיכה, חרדת זרים, הברות כפולות (מא-מא, דא-דא)",
+        tip:"תמיד אמור ביי-ביי לפני שאתה עוזב, חזור בהבטחה, הרבה מחבואים." },
+      { leap:"grey", name:"תקופת האפור", emoji:"🌫️", isGrey:true, isBig:false,
+        restlessStart:29, restlessEnd:30, peakStart:null, peakEnd:null, skillsStart:null, skillsEnd:null,
+        description:"לא קפיצה! הוא פשוט גילה שאתה יכול ללכת ולהשאיר אותו. הידיעה הזו מפחידה אותו עמוקות.",
+        skills:"לומד שאנשים ועצמים קיימים גם כשנעלמים מהעין (object permanence)",
+        tip:"שחק מצאתיך, תן לו לראות אותך מתרחק וחוזר, הרבה חיבוקים." },
+      { leap:6, name:"עולם הקטגוריות", emoji:"🗂️", isBig:false,
+        restlessStart:34, restlessEnd:35, peakStart:36, peakEnd:37, skillsStart:38, skillsEnd:42,
+        description:"הוא מסווג את העולם – כלבים הם כלבים, כוסות הן כוסות. כל דבר שייך לקבוצה.",
+        skills:"מחקה קולות חיות, מוצא עצמים מוסתרים, מבין את המילה 'לא'",
+        tip:"שמות לכל דבר, ספרים עם חיות, הסבר מה כל עצם ולמה הוא מיוחד." },
+      { leap:7, name:"עולם הרצפים", emoji:"🔢", isBig:false,
+        restlessStart:43, restlessEnd:43, peakStart:44, peakEnd:46, skillsStart:47, skillsEnd:49,
+        description:"פעולה→פעולה→תוצאה. הוא מבין סדר פעולות ויכול לחקות רצפים שלמים.",
+        skills:"מכניס ומוציא עצמים, עורם ומפיל, עוזר להתלבש, מחקה פעילויות יום-יום",
+        tip:"טקסים עקביים (אמבטיה→פיג'מה→שיר→שינה), אפשר לו להשתתף בכל שלב." },
+      { leap:8, name:"עולם התוכניות", emoji:"🧩", isBig:false,
+        restlessStart:51, restlessEnd:51, peakStart:51, peakEnd:54, skillsStart:55, skillsEnd:56,
+        description:"הוא יכול לשנות את האמצע של רצף – לבחור דרך אחרת להגיע לאותה מטרה. פתרון בעיות אמיתי!",
+        skills:"הולך בביטחון, שפה מתפתחת במהירות, מחקה פעילויות בית",
+        tip:"תן לו לבחור בין שתי אפשרויות, עודד ניסוי ושגיאה, אל תמהר לעזור מיד." },
+      { leap:9, name:"עולם העקרונות", emoji:"⚖️", isBig:true,
+        restlessStart:58, restlessEnd:59, peakStart:61, peakEnd:61, skillsStart:62, skillsEnd:63,
+        description:"כללים, שוויון, 'זה שלי' – הוא מבין עקרונות מופשטים שמנהלים את העולם. רגשות נהיים מורכבים.",
+        skills:"מנהל משא ומתן, מבין הוגן/לא הוגן, מדבר במשפטים קצרים",
+        tip:"כללים עקביים ובהירים, הסבר תמיד את הסיבות, הכר ברגשות שלו בשם." },
+      { leap:10, name:"עולם המערכות", emoji:"🌐", isBig:true,
+        restlessStart:65, restlessEnd:66, peakStart:65, peakEnd:72, skillsStart:73, skillsEnd:84,
+        description:"הקפיצה הגדולה והאחרונה. הוא מבין שהוא חלק ממשפחה, מחברה, מעולם שלם שיש לו תפקיד בו.",
+        skills:"משחק תפקידים מורכב, מבין מושג הזמן, עוזר ושיתוף פעולה אמיתי",
+        tip:"כלל אותו בשגרות המשפחה, תן לו אחריות קטנה, הכר בתרומה שלו." },
+    ];
+
+    function buildWeekMap() {
+      const map = {};
+      for (let w = 0; w <= 84; w++) map[w] = { status:"sunny", leap:null };
+      for (const leap of LEAPS) {
+        if (leap.isGrey) {
+          for (let w = leap.restlessStart; w <= leap.restlessEnd; w++) map[w] = { status:"grey", leap };
+        } else {
+          for (let w = leap.restlessStart; w <= leap.restlessEnd; w++)
+            if (map[w].status === "sunny") map[w] = { status:"restless", leap };
+          if (leap.peakStart !== null)
+            for (let w = leap.peakStart; w <= leap.peakEnd; w++) map[w] = { status:"fussy", leap };
+          if (leap.skillsStart !== null)
+            for (let w = leap.skillsStart; w <= leap.skillsEnd; w++) map[w] = { status:"skills", leap };
+        }
+      }
+      return map;
+    }
+    const WEEK_MAP = buildWeekMap();
+
+    function getWeeks(date) {
+      return Math.max(0, Math.min(84, Math.floor((Date.now() - new Date(date)) / (7*24*60*60*1000))));
+    }
+
+    const CFG = {
+      sunny:    { label:"שבוע שקט",          icon:"☀️",  mood:"נינוח ומאושר",    g1:"#d1fae5", g2:"#ecfdf5", accent:"#10b981", text:"#064e3b" },
+      restless: { label:"עשוי להיות עצבני",  icon:"🌥️", mood:"קצת חסר מנוחה",  g1:"#ffedd5", g2:"#fff7ed", accent:"#f97316", text:"#7c2d12" },
+      fussy:    { label:"שיא הסערה",         icon:"⛈️", mood:"עצבני ודורשני",   g1:"#fee2e2", g2:"#fff1f1", accent:"#ef4444", text:"#7f1d1d" },
+      skills:   { label:"פריחת מיומנויות",   icon:"🌤️", mood:"סקרן ומתפתח",    g1:"#dbeafe", g2:"#eff6ff", accent:"#3b82f6", text:"#1e3a8a" },
+      grey:     { label:"תקופת האפור",       icon:"🌫️", mood:"חרד וצמוד",       g1:"#ede9fe", g2:"#f5f3ff", accent:"#8b5cf6", text:"#4c1d95" },
+    };
+
+    const BARCOL = { sunny:"#4ade80", restless:"#fb923c", fussy:"#ef4444", skills:"#60a5fa", grey:"#a78bfa" };
+
+    const STARS = Array.from({length:50}, () => ({
+      x:Math.random()*100, y:Math.random()*100,
+      sz:Math.random()*2+0.5, d:Math.random()*4+2, o:Math.random()*0.4+0.08,
+    }));
+
+    function Stars() {
+      return (
+        <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>
+          {STARS.map((st,i) => (
+            <div key={i} style={{
+              position:"absolute", left:`${st.x}%`, top:`${st.y}%`,
+              width:st.sz, height:st.sz, borderRadius:"50%", background:"white",
+              opacity:st.o, animation:`twinkle ${st.d}s ease-in-out infinite alternate`,
+              animationDelay:`${i*0.09}s`,
+            }}/>
+          ))}
+        </div>
+      );
+    }
+
+    function Timeline({cur, disp, onClick}) {
+      return (
+        <div style={{display:"flex",gap:"2px",alignItems:"flex-end",overflowX:"auto",
+          scrollbarWidth:"none",padding:"4px 0",cursor:"pointer"}}>
+          {Array.from({length:85},(_,w) => {
+            const wd=WEEK_MAP[w], isD=w===disp, isC=w===cur;
+            return (
+              <div key={w} onClick={()=>onClick(w)} title={`שבוע ${w}`} style={{
+                width:isD?7:isC?5:3,
+                height:isD?30:isC?24:wd.leap?18:10,
+                borderRadius:3, flexShrink:0,
+                background:isD?"white":isC?"#e2e8f0":(BARCOL[wd.status]||"#334155"),
+                opacity:w<cur&&!isC&&!isD?0.35:1, transition:"all 0.12s",
+              }}/>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function Card({weekNum, isPast, isCurrent}) {
+      const wn = Math.max(0,Math.min(84,weekNum));
+      const {status,leap} = WEEK_MAP[wn];
+      const c = CFG[status];
+      return (
+        <div style={{
+          background:`linear-gradient(135deg,${c.g1},${c.g2})`,
+          borderRadius:24, padding:22,
+          border:`2px solid ${isCurrent?c.accent:"rgba(255,255,255,0.12)"}`,
+          boxShadow:isCurrent?`0 12px 40px ${c.accent}44,0 2px 8px rgba(0,0,0,.1)`:"0 4px 20px rgba(0,0,0,.08)",
+          opacity:isPast?0.58:1, position:"relative", overflow:"hidden",
+          transform:isCurrent?"scale(1.01)":"scale(1)", transition:"all .3s",
+        }}>
+          <div style={{position:"absolute",top:-28,left:-28,width:120,height:120,
+            borderRadius:"50%",background:`${c.accent}15`,pointerEvents:"none"}}/>
+          {isCurrent&&<div style={{position:"absolute",top:13,right:13,background:c.accent,
+            color:"#fff",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:20}}>עכשיו</div>}
+          {isPast&&<div style={{position:"absolute",top:13,right:13,background:"rgba(0,0,0,.13)",
+            color:c.text,fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>עבר</div>}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginTop:8,marginBottom:14}}>
+            <div>
+              <div style={{fontSize:11,color:c.text,opacity:.5,fontWeight:600,marginBottom:2}}>שבוע {wn} מהלידה</div>
+              <div style={{fontSize:19,fontWeight:800,color:c.text}}>{c.icon} {c.label}</div>
+              <div style={{fontSize:12,color:c.text,opacity:.45,marginTop:2}}>מצב: {c.mood}</div>
+            </div>
+            <div style={{fontSize:44,lineHeight:1,filter:"drop-shadow(0 2px 4px rgba(0,0,0,.15))"}}>{c.icon}</div>
+          </div>
+          {leap ? <>
+            <div style={{background:`${c.accent}20`,borderRadius:13,padding:"9px 13px",
+              marginBottom:11,display:"flex",alignItems:"center",gap:9}}>
+              <span style={{fontSize:22}}>{leap.emoji}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:c.text,opacity:.5,fontWeight:600}}>
+                  {leap.isGrey?"תקופה מיוחדת":`קפיצה ${leap.leap} מתוך 10`}
+                </div>
+                <div style={{fontSize:15,fontWeight:800,color:c.text}}>{leap.name}</div>
+              </div>
+              {leap.isBig&&<div style={{background:c.accent,color:"#fff",fontSize:9,
+                fontWeight:800,padding:"2px 7px",borderRadius:10,flexShrink:0}}>★ גדולה</div>}
+            </div>
+            <p style={{fontSize:13,lineHeight:1.65,color:c.text,margin:"0 0 11px",opacity:.85}}>{leap.description}</p>
+            {status==="skills"&&(
+              <div style={{background:`${c.accent}18`,borderRadius:11,padding:"9px 12px",marginBottom:9}}>
+                <div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:3}}>🌱 מיומנויות עכשיו</div>
+                <div style={{fontSize:12.5,color:c.text,opacity:.8,lineHeight:1.5}}>{leap.skills}</div>
+              </div>
+            )}
+            {status==="restless"&&(
+              <div style={{background:"rgba(255,255,255,.4)",borderRadius:11,padding:"9px 12px",marginBottom:9,borderRight:`3px solid ${c.accent}`}}>
+                <div style={{fontSize:12.5,color:c.text,opacity:.75,lineHeight:1.5}}>הקפיצה עוד לא הגיעה לשיאה — ייתכן שהתינוק יהיה קצת יותר חסר מנוחה השבוע.</div>
+              </div>
+            )}
+            <div style={{background:"rgba(255,255,255,.6)",borderRadius:11,padding:"9px 12px",borderRight:`3px solid ${c.accent}`}}>
+              <div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:3}}>💡 טיפ להורה</div>
+              <div style={{fontSize:12.5,color:c.text,opacity:.8,lineHeight:1.5}}>{leap.tip}</div>
+            </div>
+          </> : (
+            <div style={{background:"rgba(255,255,255,.5)",borderRadius:13,padding:"13px 15px"}}>
+              <p style={{fontSize:13,color:c.text,opacity:.7,margin:0,lineHeight:1.6}}>
+                🌿 תקופה שקטה יחסית. התינוק מתאמן ומשכלל את הכישורים שרכש. משחק חופשי וזמן איכות הם הדבר הכי טוב עכשיו.
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const [date, setDate] = useState("");
+      const [ready, setReady] = useState(false);
+      const [offset, setOffset] = useState(0);
+      const [tab, setTab] = useState("card");
+      const [anim, setAnim] = useState(null);
+      const [ts, setTs] = useState(null);
+      const [ds, setDs] = useState(null);
+
+      const today = new Date().toISOString().split("T")[0];
+      const earliest = new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
+      const cur = ready&&date ? getWeeks(date) : null;
+      const disp = cur!==null ? Math.max(0,Math.min(84,cur+offset)) : null;
+
+      const go = useCallback((dir) => {
+        if (cur===null) return;
+        setAnim(dir); setTimeout(()=>setAnim(null),280);
+        if (dir===1) setOffset(o=>Math.min(84-cur,o+1));
+        else setOffset(o=>Math.max(-cur,o-1));
+      },[cur]);
+
+      return (
+        <div dir="rtl" style={{
+          minHeight:"100vh",
+          background:"linear-gradient(160deg,#0a0f1e 0%,#0f172a 45%,#1a0a2e 100%)",
+          fontFamily:"'Segoe UI',Tahoma,'Arial Hebrew',sans-serif",
+          overflowX:"hidden",
+        }}>
+          <style>{`
+            @keyframes twinkle{from{opacity:.06}to{opacity:.65}}
+            @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+            @keyframes sl{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+            @keyframes sr{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+            *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+            ::-webkit-scrollbar{display:none}
+            input[type=date]{direction:ltr;color-scheme:dark}
+            button:hover{filter:brightness(1.12)}
+          `}</style>
+          <Stars/>
+          <div style={{position:"relative",zIndex:1,maxWidth:430,margin:"0 auto",
+            padding:"20px 16px 48px",display:"flex",flexDirection:"column",gap:15,
+            animation:"fadeUp .5s ease"}}>
+
+            <div style={{textAlign:"center",padding:"10px 0 2px"}}>
+              <div style={{fontSize:46,marginBottom:4,filter:"drop-shadow(0 0 16px rgba(196,181,253,.7))"}}>🌙</div>
+              <h1 style={{color:"#f8fafc",fontSize:27,fontWeight:900,margin:0,
+                letterSpacing:"-0.03em",textShadow:"0 0 30px rgba(196,181,253,.4)"}}>קפיצות הגדילה</h1>
+              <p style={{color:"#475569",fontSize:13,margin:"5px 0 0"}}>Wonder Weeks · מה קורה לתינוק שלך עכשיו</p>
+            </div>
+
+            <div style={{background:"rgba(255,255,255,.07)",backdropFilter:"blur(24px)",
+              borderRadius:22,padding:20,border:"1px solid rgba(255,255,255,.12)",
+              boxShadow:"0 8px 32px rgba(0,0,0,.3)"}}>
+              <label style={{color:"#cbd5e1",fontSize:12,fontWeight:700,display:"block",
+                marginBottom:8,letterSpacing:".05em"}}>📅 תאריך לידה (או מועד לידה משוער)</label>
+              <input type="date" value={date} max={today} min={earliest}
+                onChange={e=>{setDate(e.target.value);setReady(false);setOffset(0);}}
+                style={{width:"100%",background:"rgba(255,255,255,.09)",border:"1px solid rgba(255,255,255,.18)",
+                  borderRadius:13,padding:"11px 14px",color:"#f1f5f9",fontSize:16,outline:"none",marginBottom:12}}/>
+              <div style={{background:"rgba(99,102,241,.12)",borderRadius:10,padding:"8px 12px",
+                marginBottom:14,fontSize:11,color:"#a5b4fc",lineHeight:1.5}}>
+                ⚠️ Wonder Weeks מחשב ממועד הלידה המשוער. אם נולד בדיוק בזמן – ההפרש זניח.
+              </div>
+              <button onClick={()=>{if(date){setReady(true);setOffset(0);}}} disabled={!date}
+                style={{width:"100%",padding:13,border:"none",borderRadius:14,
+                  background:date?"linear-gradient(135deg,#6366f1,#8b5cf6)":"rgba(255,255,255,.08)",
+                  color:date?"#fff":"#475569",fontSize:15,fontWeight:800,
+                  cursor:date?"pointer":"not-allowed",
+                  boxShadow:date?"0 4px 20px rgba(99,102,241,.5)":"none",transition:"all .2s"}}>
+                {date?"🔍 מה קורה עכשיו?":"בחר תאריך"}
+              </button>
+            </div>
+
+            {ready&&cur!==null&&(<>
+              <div style={{background:"rgba(255,255,255,.05)",backdropFilter:"blur(20px)",
+                borderRadius:18,padding:"12px 15px",border:"1px solid rgba(255,255,255,.08)"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{textAlign:"center",flexShrink:0}}>
+                    <div style={{color:"#475569",fontSize:10,fontWeight:700}}>עכשיו</div>
+                    <div style={{color:"#f1f5f9",fontSize:26,fontWeight:900,lineHeight:1}}>{cur}</div>
+                  </div>
+                  <div style={{flex:1,overflow:"hidden"}}>
+                    <Timeline cur={cur} disp={disp} onClick={w=>setOffset(w-cur)}/>
+                  </div>
+                  <div style={{textAlign:"center",flexShrink:0}}>
+                    <div style={{color:"#334155",fontSize:10,fontWeight:700}}>מתוך</div>
+                    <div style={{color:"#475569",fontSize:26,fontWeight:900,lineHeight:1}}>84</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{display:"flex",gap:8}}>
+                {[["card","📋 כרטיס"],["all","🗓 כל הקפיצות"]].map(([t,l])=>(
+                  <button key={t} onClick={()=>setTab(t)} style={{
+                    flex:1,padding:"10px 0",
+                    background:tab===t?"rgba(99,102,241,.32)":"rgba(255,255,255,.05)",
+                    border:`1px solid ${tab===t?"#6366f1":"rgba(255,255,255,.09)"}`,
+                    borderRadius:13,color:tab===t?"#a5b4fc":"#475569",
+                    fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s"}}>{l}</button>
+                ))}
+              </div>
+
+              {tab==="card"&&<>
+                <div
+                  onTouchStart={e=>setTs(e.touches[0].clientX)}
+                  onTouchEnd={e=>{if(ts===null)return;const d=ts-e.changedTouches[0].clientX;if(Math.abs(d)>44)go(d>0?-1:1);setTs(null);}}
+                  onMouseDown={e=>setDs(e.clientX)}
+                  onMouseUp={e=>{if(ds===null)return;const d=ds-e.clientX;if(Math.abs(d)>44)go(d>0?-1:1);setDs(null);}}
+                  style={{userSelect:"none",cursor:ds?"grabbing":"grab",
+                    animation:anim===1?"sl .26s ease":anim===-1?"sr .26s ease":undefined}}>
+                  <Card weekNum={disp} isPast={disp<cur} isCurrent={disp===cur}/>
+                </div>
+                <div style={{display:"flex",gap:9,alignItems:"center"}}>
+                  <button onClick={()=>go(-1)} disabled={disp<=0} style={{flex:1,padding:11,
+                    background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.1)",borderRadius:13,
+                    color:disp>0?"#e2e8f0":"#334155",fontSize:14,fontWeight:700,
+                    cursor:disp>0?"pointer":"not-allowed",transition:"background .15s"}}>← קודם</button>
+                  <button onClick={()=>setOffset(0)} style={{padding:"11px 13px",
+                    background:offset===0?"rgba(99,102,241,.32)":"rgba(255,255,255,.07)",
+                    border:`1px solid ${offset===0?"#6366f1":"rgba(255,255,255,.1)"}`,
+                    borderRadius:13,color:"#e2e8f0",fontSize:12,fontWeight:800,
+                    cursor:"pointer",transition:"all .15s"}}>היום</button>
+                  <button onClick={()=>go(1)} disabled={disp>=84} style={{flex:1,padding:11,
+                    background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.1)",borderRadius:13,
+                    color:disp<84?"#e2e8f0":"#334155",fontSize:14,fontWeight:700,
+                    cursor:disp<84?"pointer":"not-allowed",transition:"background .15s"}}>הבא →</button>
+                </div>
+                <div style={{textAlign:"center",color:"#2d3748",fontSize:11}}>← גלוש שמאלה לשבוע הבא · ימינה לשבוע הקודם →</div>
+              </>}
+
+              {tab==="all"&&(
+                <div style={{background:"rgba(255,255,255,.04)",backdropFilter:"blur(18px)",
+                  borderRadius:20,padding:15,border:"1px solid rgba(255,255,255,.07)",
+                  display:"flex",flexDirection:"column",gap:7}}>
+                  {LEAPS.map(lp=>{
+                    const end=lp.skillsEnd??lp.restlessEnd;
+                    const past=cur>end, active=cur>=lp.restlessStart&&cur<=end;
+                    const away=lp.restlessStart-cur;
+                    return (
+                      <div key={lp.leap} onClick={()=>{setOffset(lp.restlessStart-cur);setTab("card");}}
+                        style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:13,
+                          background:active?"rgba(99,102,241,.18)":"rgba(255,255,255,.03)",
+                          border:`1px solid ${active?"#6366f1":"rgba(255,255,255,.05)"}`,
+                          cursor:"pointer",opacity:past?.43:1,transition:"all .14s"}}>
+                        <span style={{fontSize:20}}>{lp.emoji}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:700,color:active?"#a5b4fc":"#cbd5e1",
+                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                            {lp.isGrey?"":`קפיצה ${lp.leap} · `}{lp.name}
+                          </div>
+                          <div style={{fontSize:11,color:"#475569"}}>שבועות {lp.restlessStart}–{end}{lp.isBig&&<span style={{color:"#f59e0b",marginRight:6}}> ★</span>}</div>
+                        </div>
+                        <div style={{fontSize:11,padding:"3px 9px",borderRadius:20,flexShrink:0,fontWeight:700,
+                          background:past?"rgba(71,85,105,.3)":active?"rgba(99,102,241,.4)":"rgba(255,255,255,.06)",
+                          color:past?"#475569":active?"#a5b4fc":"#64748b"}}>
+                          {past?"✓ עבר":active?"עכשיו":`בעוד ${away}ש׳`}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div style={{background:"rgba(255,255,255,.03)",borderRadius:15,padding:"11px 14px",
+                border:"1px solid rgba(255,255,255,.06)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 14px"}}>
+                {Object.entries(CFG).map(([k,v])=>(
+                  <div key={k} style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14}}>{v.icon}</span>
+                    <span style={{fontSize:11,color:"#475569"}}>{v.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <p style={{color:"#2d3748",fontSize:11,textAlign:"center",margin:0,lineHeight:1.8}}>
+                מבוסס על Wonder Weeks (van de Rijt & Plooij). הקפיצות הן ממוצע – כל תינוק יחיד. בכל ספק רפואי, פנה לרופא ילדים.<br/>
+                <span style={{opacity:.7}}>⚠️ לא הכל מדויק — התזמון בפועל יכול להשתנות בשבוע-שבועיים לכל כיוון.</span>
+              </p>
+            </>)}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
