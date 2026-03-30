@@ -257,6 +257,15 @@
       const [ts,setTs]=useState(null);
       const [ds,setDs]=useState(null);
       const [isDark,setIsDark]=useState(()=>{const dark=localStorage.getItem("ww_theme")!=="light";document.body.style.background=dark?'#0a0f1e':'#faf8f5';return dark;});
+      const [installPrompt,setInstallPrompt]=useState(null);
+      const [installed,setInstalled]=useState(false);
+      React.useEffect(()=>{
+        const handler=e=>{e.preventDefault();setInstallPrompt(e);};
+        window.addEventListener('beforeinstallprompt',handler);
+        window.addEventListener('appinstalled',()=>{setInstalled(true);setInstallPrompt(null);});
+        return()=>window.removeEventListener('beforeinstallprompt',handler);
+      },[]);
+      const doInstall=()=>{if(!installPrompt)return;installPrompt.prompt();installPrompt.userChoice.then(()=>setInstallPrompt(null));};
       const T=isDark?DARK:LIGHT;
       const toggleTheme=()=>setIsDark(d=>{const n=!d;localStorage.setItem("ww_theme",n?"dark":"light");return n;});
       const today=new Date().toISOString().split("T")[0];
@@ -272,6 +281,10 @@
 
           <div style={{textAlign:"center",padding:"10px 0 2px",position:"relative"}}>
             <button onClick={toggleTheme} style={{position:"absolute",left:0,top:10,background:"none",border:"none",cursor:"pointer",fontSize:20,opacity:.7,padding:4,zIndex:10}}>{isDark?"☀️":"🌙"}</button>
+            {installPrompt&&!installed&&<button onClick={doInstall} style={{position:"absolute",right:0,top:10,background:"rgba(99,102,241,.2)",border:"1px solid rgba(99,102,241,.4)",borderRadius:10,cursor:"pointer",padding:"4px 10px",zIndex:10,fontSize:11,fontWeight:700,color:"#a5b4fc",display:"flex",alignItems:"center",gap:4}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v13M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+              התקן אפליקציה
+            </button>}
             <div style={{fontSize:46,marginBottom:4,filter:T.glow}}>🌙</div>
             <h1 style={{color:T.h1,fontSize:27,fontWeight:900,margin:0,letterSpacing:"-0.03em",textShadow:T.h1s}}>קפיצות הגדילה</h1>
             <p style={{color:T.sub,fontSize:13,margin:"5px 0 0"}}>Wonder Weeks · מה קורה לתינוק שלך עכשיו</p>
