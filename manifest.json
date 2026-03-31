@@ -2,25 +2,21 @@
   "name": "קפיצות הגדילה",
   "short_name": "קפיצות גדילה",
   "description": "Wonder Weeks – מה קורה לתינוק שלך עכשיו",
-  "start_url": "/wonder-weeks/",
-  "scope": "/wonder-weeks/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#0a0f1e",
   "theme_color": "#0a0f1e",
-  "lang": "he",
-  "dir": "rtl",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     }
   ]
 }
