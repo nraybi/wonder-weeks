@@ -2,366 +2,1688 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <title>קפיצות הגדילה</title>
-  <meta name="description" content="Wonder Weeks – מה קורה לתינוק שלך עכשיו"/>
+  <meta name="description" content="Wonder Weeks – מעקב קפיצות, שינה ואוכל"/>
   <link rel="manifest" href="manifest.json"/>
   <meta name="theme-color" content="#0a0f1e"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="קפיצות גדילה"/>
-  <style>body{margin:0;padding:0;background:#0a0f1e}#root{min-height:100vh}.light-body{background:#faf8f5!important}</style>
+  <style>
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+    body{background:#0a0f1e;font-family:'Segoe UI',Tahoma,'Arial Hebrew',sans-serif;overscroll-behavior:none}
+    #root{min-height:100vh;min-height:100dvh}
+    ::-webkit-scrollbar{display:none}
+    @keyframes twinkle{from{opacity:.06}to{opacity:.65}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    @keyframes ww-slide-down{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:translateY(0)}}
+    input[type=date]{direction:ltr}
+    button{border:none;cursor:pointer;font-family:inherit}
+    button:active{transform:scale(.97)}
+  </style>
 </head>
 <body>
   <div id="root"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <script>if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));</script>
-  <script type="text/babel">
-    const { useState, useCallback } = React;
-
-    const LEAPS = [
-      { leap:1, name:"עולם התחושות", emoji:"✨", isBig:false,
-        restlessStart:4, restlessEnd:4, peakStart:5, peakEnd:5, skillsStart:6, skillsEnd:6,
-        description:"המוח מעבד לפתע מידע חושי בצורה חדשה לגמרי. ריחות, אורות, מגע – הכל מציף ומרגש ומבהיל.",
-        skills:"עוקב בעיניים אחרי פנים, מגיב לקולות מוכרים, מחייך חיוך חברתי ראשון",
-        tip:"חיבוק צמוד, עיניים בגובה עיניו, קול רך וחם. הקרבה שלך היא העולם שלו.",
-        sleep:"השינה עשויה להיות מקוטעת בגלל ההצפה החושית. עמעום אורות, רעש לבן קולני ועיטוף יכולים לעזור לסנן גירויים.",
-        feeding:"ייתכן רצון לינוק בתדירות גבוהה מאוד ('האכלות צבר'). ההאכלה משמשת עכשיו להרגעה ונחמה – זה טבעי לגמרי.",
-        activities:"צעצועים בשחור-לבן (קונטרסט גבוה). דברו אליו לאט וברור פנים-אל-פנים. מגע עור-לעור יעיל מאוד בהרגעה." },
-      { leap:2, name:"עולם הדפוסים", emoji:"🔷", isBig:false,
-        restlessStart:7, restlessEnd:7, peakStart:8, peakEnd:8, skillsStart:9, skillsEnd:10,
-        description:"הוא מתחיל לזהות דפוסים חוזרים – פנים, קולות, קצב. העולם מתחיל להסתדר.",
-        skills:"מחייך חיוך חברתי, עוקב אחר עצמים נעים, מקשיב לשינויי קצב",
-        tip:"שירים עם חזרות, הרבה שיחה ישירה אליו, גרימות פנים מוגזמות ומשעשעות.",
-        sleep:"זה הזמן להתחיל טקס שינה קבוע וקצר (אמבטיה, עיסוי, שיר קבוע). הוא יתחיל לקשר את התבנית לשינה.",
-        feeding:"התינוק עשוי להיות מוסח יותר בזמן ההאכלה. נסו להאכיל בחדר שקט וחשוך יחסית אם הוא מתנתק הרבה.",
-        activities:"תלו מובייל פשוט מעל המיטה. תנו לו לחקור את כפות הידיים שלו. שירו שירים עם חזרתיות (קוקו-בא)." },
-      { leap:3, name:"עולם המעברים", emoji:"🌊", isBig:false,
-        restlessStart:12, restlessEnd:12, peakStart:12, peakEnd:12, skillsStart:13, skillsEnd:13,
-        description:"תנועה רצופה, שינויי צליל – הכל נתפס כרצף ולא כקפיצות נפרדות. מרתק ומבלבל.",
-        skills:"מסתכל על ידיו בעניין, מנסה להגיע לעצמים, מגביה ראש ליד בבטן",
-        tip:"נדנדה עדינה, תנועות רכות, מוזיקה עם עליות וירידות. אמבטיה חמימה עם תנועות מים – כל מעבר חלק מרגיע ומלמד.",
-        sleep:"לקראת גיל 3 חודשים ייצור המלטונין מתחיל להסתדר. הקפידו על כ-90 דקות עירות בין תנומות למניעת עייפות יתר.",
-        feeding:"קפיצת גדילה פיזית של גיל 3 חודשים משתלבת כאן. אם השדיים מרגישים 'ריקים' – זה בסדר, הייצור מתייעל.",
-        activities:"טיסה ב'אווירון' על הידיים שלכם. שטיח פעילות עם מרקמים שונים. עודדו אותו לתפוס חפצים שתגישו לו." },
-      { leap:4, name:"עולם האירועים", emoji:"🎬", isBig:true,
-        restlessStart:15, restlessEnd:16, peakStart:17, peakEnd:19, skillsStart:20, skillsEnd:21,
-        description:"'רגרסיית השינה של 4 חודשים' – זה בדיוק זה! הוא גילה שפעולות יוצרות תוצאות. העולם השתנה לו לגמרי.",
-        skills:"מחפש עצמים שנפלו, צוחק בקול, מתחיל להתגלגל, אוחז עצמים",
-        tip:"משחקי סיבה ותוצאה (לחיצה→קול), שיר קוקו, הגב בעקביות לקריאותיו.",
-        sleep:"⚠️ משבר השינה של 4 חודשים! מחזורי השינה משתנים ודומים למבוגר. עלולים להתעורר בין מחזורים (כל ~45 דק'). עודדו הירדמות עצמאית אך הציעו נחמה.",
-        feeding:"העולם מעניין יותר מלאכול. התינוק עשוי לאכול מעט ביום ולהשלים קלוריות בלילה. נסו סביבה נטולת גירויים לארוחות היום.",
-        activities:"משחקי 'קוקו' (אמא נעלמת אבל תמיד חוזרת). תנו לו לזרוק צעצועים והרימו עבורו. צעצועים שמפיקים צליל בלחיצה." },
-      { leap:5, name:"עולם היחסים", emoji:"🔗", isBig:true,
-        restlessStart:23, restlessEnd:24, peakStart:26, peakEnd:26, skillsStart:27, skillsEnd:28,
-        description:"מרחק, כיוון, גודל, מהירות – הוא מבין שאתה יכול להתרחק ממנו. חרדת הנטישה מתחילה.",
-        skills:"זוחל, עומד בתמיכה, חרדת זרים, הברות כפולות (מא-מא, דא-דא)",
-        tip:"תמיד אמור ביי-ביי לפני שאתה עוזב, חזור בהבטחה, הרבה מחבואים.",
-        sleep:"הבנת המרחק מביאה חרדת נטישה ראשונית. התינוק עשוי לבכות ברגע שתצאו בערב. השהו תגובה מעט, אל תתעלמו ממצוקה אמיתית.",
-        feeding:"שלב הטעימות והמוצקים (גיל חצי שנה)! הציעו מרקמים שונים. שבו לאכול איתו כדי שילמד לחקות את פעולת הלעיסה.",
-        activities:"משחקי הכנסה והוצאה מקופסה. פזרו צעצועים במרחק מה ממנו על המזרן כדי לעודד זחילה לכיוונם." },
-      { leap:"grey", name:"תקופת האפור", emoji:"🌫️", isGrey:true, isBig:false,
-        restlessStart:29, restlessEnd:30, peakStart:null, peakEnd:null, skillsStart:null, skillsEnd:null,
-        description:"לא קפיצה! הוא פשוט גילה שאתה יכול ללכת ולהשאיר אותו. הידיעה הזו מפחידה אותו עמוקות.",
-        skills:"לומד שאנשים ועצמים קיימים גם כשנעלמים מהעין (object permanence)",
-        tip:"שחק מצאתיך, תן לו לראות אותך מתרחק וחוזר, הרבה חיבוקים.",
-        sleep:"צמידות מוגברת בשעות הלילה היא נורמלית לחלוטין בתקופה זו.",
-        feeding:"אין שינוי מיוחד – המשיכו בשגרה הקיימת.",
-        activities:"מחבואים פשוטים. הראו לו שאתם נעלמים וחוזרים – זה מלמד שהעולם בטוח." },
-      { leap:6, name:"עולם הקטגוריות", emoji:"🗂️", isBig:false,
-        restlessStart:34, restlessEnd:35, peakStart:36, peakEnd:37, skillsStart:38, skillsEnd:42,
-        description:"הוא מסווג את העולם – כלבים הם כלבים, כוסות הן כוסות. כל דבר שייך לקבוצה.",
-        skills:"מחקה קולות חיות, מוצא עצמים מוסתרים, מבין את המילה 'לא'",
-        tip:"שמות לכל דבר, ספרים עם חיות, הסבר מה כל עצם ולמה הוא מיוחד.",
-        sleep:"התפתחות מוטורית מהירה (התיישבות, עמידה במיטה) גורמת לרצון לתרגל במקום לישון. תנו המון זמן רצפה ביום.",
-        feeding:"הוא רוצה להאכיל את עצמו! הציעו 'אוכל אצבעות' מותאם (ברוקולי רך, רצועות אבוקדו). זה מלכלך אבל חשוב.",
-        activities:"מיון חפצים לקופסאות לפי צבעים. קריאת ספרים מצוירים עם קולות חיות. חקירת כלי פלסטיק ומטבח." },
-      { leap:7, name:"עולם הרצפים", emoji:"🔢", isBig:false,
-        restlessStart:43, restlessEnd:43, peakStart:44, peakEnd:46, skillsStart:47, skillsEnd:49,
-        description:"פעולה→פעולה→תוצאה. הוא מבין סדר פעולות ויכול לחקות רצפים שלמים.",
-        skills:"מכניס ומוציא עצמים, עורם ומפיל, עוזר להתלבש, מחקה פעילויות יום-יום",
-        tip:"טקסים עקביים (אמבטיה→פיג'מה→שיר→שינה), אפשר לו להשתתף בכל שלב.",
-        sleep:"הוא כבר מבין את רצף טקס השינה. עלול לבכות כבר באמבטיה אם עייף מדי. הקדימו את טקס השינה במידת הצורך.",
-        feeding:"שלבו אותו (כצופה) ברצף הכנת האוכל: הראו איך מוזגים מים לכוס או קולפים פרי.",
-        activities:"בניית מגדל קוביות (והריסתו!). צעצועי השחלת טבעות על עמוד. משחקי התאמת צורה-לחור." },
-      { leap:8, name:"עולם התוכניות", emoji:"🧩", isBig:false,
-        restlessStart:51, restlessEnd:51, peakStart:51, peakEnd:54, skillsStart:55, skillsEnd:56,
-        description:"הוא יכול לשנות את האמצע של רצף – לבחור דרך אחרת להגיע לאותה מטרה. פתרון בעיות אמיתי!",
-        skills:"הולך בביטחון, שפה מתפתחת במהירות, מחקה פעילויות בית",
-        tip:"תן לו לבחור בין שתי אפשרויות, עודד ניסוי ושגיאה, אל תמהר לעזור מיד.",
-        sleep:"ייתכן מעבר טבעי משתי תנומות לתנומה אחת ארוכה. מעבר מאתגר שעשוי לקחת כמה שבועות.",
-        feeding:"מעבר לתזונת משפחה רגילה. עודדו שימוש עצמאי בכפית ומזלג מותאמים, גם אם האוכל נופל.",
-        activities:"משחקי דמיון פשוטים (להאכיל בובה, לדבר בשלט). משימות קטנות: להביא נעליים, לזרוק טיטול לפח." },
-      { leap:9, name:"עולם העקרונות", emoji:"⚖️", isBig:true,
-        restlessStart:58, restlessEnd:59, peakStart:61, peakEnd:61, skillsStart:62, skillsEnd:63,
-        description:"כללים, שוויון, 'זה שלי' – הוא מבין עקרונות מופשטים שמנהלים את העולם. רגשות נהיים מורכבים.",
-        skills:"מנהל משא ומתן, מבין הוגן/לא הוגן, מדבר במשפטים קצרים",
-        tip:"כללים עקביים ובהירים, הסבר תמיד את הסיבות, הכר ברגשות שלו בשם.",
-        sleep:"הם בודקים גבולות גם סביב השינה ('עוד סיפור!', 'מים!', 'פיפי!'). שמרו על גבולות ברורים ואוהבים. טקס קבוע הוא קריטי.",
-        feeding:"בררנות אכילה עלולה להופיע כדרך לבטא שליטה. המשיכו להציע מגוון ללא לחץ. ההורה מחליט מה ומתי, הילד מחליט כמה.",
-        activities:"אפשרו לבחור מתוך 2 אופציות (חולצה אדומה או כחולה?). הרבה משחקי חוץ וגינה לפריקת אנרגיה." },
-      { leap:10, name:"עולם המערכות", emoji:"🌐", isBig:true,
-        restlessStart:65, restlessEnd:66, peakStart:65, peakEnd:72, skillsStart:73, skillsEnd:84,
-        description:"הקפיצה הגדולה והאחרונה. הוא מבין שהוא חלק ממשפחה, מחברה, מעולם שלם שיש לו תפקיד בו.",
-        skills:"משחק תפקידים מורכב, מבין מושג הזמן, עוזר ושיתוף פעולה אמיתי",
-        tip:"כלל אותו בשגרות המשפחה, תן לו אחריות קטנה, הכר בתרומה שלו.",
-        sleep:"שלב בו חלק עושים מעבר למיטת מעבר (מומלץ לחכות לגיל שנתיים+ אם הילד לא קופץ). מושגי זמן פשוטים כמו 'מחר' מתחילים להיות מובנים.",
-        feeding:"שיתוף מלא בארוחות משפחתיות. יכולת משופרת לשבת ליד השולחן זמן ממושך יותר.",
-        activities:"לגו דופלו או מגנטים. עזרה ממשית במטלות (ניגוב שולחן, הכנסת כביסה למכונה). ציור וצביעה." },
-    ];
-
-    function buildWeekMap() {
-      const map = {};
-      for (let w = 0; w <= 84; w++) map[w] = { status:"sunny", leap:null };
-      for (const leap of LEAPS) {
-        if (leap.isGrey) {
-          for (let w = leap.restlessStart; w <= leap.restlessEnd; w++) map[w] = { status:"grey", leap };
-        } else {
-          for (let w = leap.restlessStart; w <= leap.restlessEnd; w++)
-            if (map[w].status === "sunny") map[w] = { status:"restless", leap };
-          if (leap.peakStart !== null)
-            for (let w = leap.peakStart; w <= leap.peakEnd; w++) map[w] = { status:"fussy", leap };
-          if (leap.skillsStart !== null)
-            for (let w = leap.skillsStart; w <= leap.skillsEnd; w++) map[w] = { status:"skills", leap };
-        }
-      }
-      return map;
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+      let wwRefreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (wwRefreshing || document.getElementById('ww-update-banner')) return;
+        showWwUpdateBanner();
+      });
     }
-    const WEEK_MAP = buildWeekMap();
-    function getWeeks(d){return Math.max(0,Math.min(84,Math.floor((Date.now()-new Date(d))/(7*24*60*60*1000))));}
-
-    const DARK={bg:"linear-gradient(160deg,#0a0f1e 0%,#0f172a 45%,#1a0a2e 100%)",card:"rgba(255,255,255,.07)",cardB:"rgba(255,255,255,.12)",text:"#f8fafc",sub:"#475569",muted:"#2d3748",tabA:"rgba(99,102,241,.32)",tabAB:"#6366f1",tabAC:"#a5b4fc",tabI:"rgba(255,255,255,.05)",tabIB:"rgba(255,255,255,.09)",tabIC:"#475569",tlBg:"rgba(255,255,255,.05)",tlB:"rgba(255,255,255,.08)",nav:"rgba(255,255,255,.08)",navB:"rgba(255,255,255,.1)",allBg:"rgba(255,255,255,.04)",allB:"rgba(255,255,255,.07)",rowA:"rgba(99,102,241,.18)",rowAB:"#6366f1",rowI:"rgba(255,255,255,.03)",rowIB:"rgba(255,255,255,.05)",lgBg:"rgba(255,255,255,.03)",lgB:"rgba(255,255,255,.06)",inBg:"rgba(255,255,255,.09)",inB:"rgba(255,255,255,.18)",inC:"#f1f5f9",infoBg:"rgba(99,102,241,.12)",infoC:"#a5b4fc",ds:"dark",h1:"#f8fafc",h1s:"0 0 30px rgba(196,181,253,.4)",glow:"drop-shadow(0 0 16px rgba(196,181,253,.7))"};
-    const LIGHT={bg:"#faf8f5",card:"rgba(255,255,255,.8)",cardB:"rgba(99,102,241,.15)",text:"#1e293b",sub:"#64748b",muted:"#94a3b8",tabA:"rgba(99,102,241,.12)",tabAB:"#6366f1",tabAC:"#4f46e5",tabI:"rgba(0,0,0,.04)",tabIB:"rgba(0,0,0,.08)",tabIC:"#94a3b8",tlBg:"rgba(255,255,255,.7)",tlB:"rgba(0,0,0,.06)",nav:"rgba(255,255,255,.7)",navB:"rgba(0,0,0,.08)",allBg:"rgba(255,255,255,.6)",allB:"rgba(0,0,0,.06)",rowA:"rgba(99,102,241,.08)",rowAB:"#6366f1",rowI:"rgba(255,255,255,.5)",rowIB:"rgba(0,0,0,.04)",lgBg:"rgba(255,255,255,.6)",lgB:"rgba(0,0,0,.06)",inBg:"rgba(255,255,255,.9)",inB:"rgba(0,0,0,.1)",inC:"#1e293b",infoBg:"rgba(99,102,241,.06)",infoC:"#4338ca",ds:"light",h1:"#1e293b",h1s:"none",glow:"none"};
-
-    const CFG={
-      sunny:   {label:"שבוע שקט",         icon:"☀️", mood:"נינוח ומאושר",   g1:"#d1fae5",g2:"#ecfdf5",accent:"#10b981",text:"#064e3b"},
-      restless:{label:"עשוי להיות עצבני", icon:"🌥️",mood:"קצת חסר מנוחה", g1:"#ffedd5",g2:"#fff7ed",accent:"#f97316",text:"#7c2d12"},
-      fussy:   {label:"שיא הסערה",        icon:"⛈️",mood:"עצבני ודורשני",  g1:"#fee2e2",g2:"#fff1f1",accent:"#ef4444",text:"#7f1d1d"},
-      skills:  {label:"פריחת מיומנויות", icon:"🌤️",mood:"סקרן ומתפתח",   g1:"#dbeafe",g2:"#eff6ff",accent:"#3b82f6",text:"#1e3a8a"},
-      grey:    {label:"תקופת האפור",      icon:"🌫️",mood:"חרד וצמוד",      g1:"#ede9fe",g2:"#f5f3ff",accent:"#8b5cf6",text:"#4c1d95"},
-    };
-    const BARCOL={sunny:"#4ade80",restless:"#fb923c",fussy:"#ef4444",skills:"#60a5fa",grey:"#a78bfa"};
-    const STARS=Array.from({length:50},()=>({x:Math.random()*100,y:Math.random()*100,sz:Math.random()*2+.5,d:Math.random()*4+2,o:Math.random()*.4+.08}));
-
-    function Stars({isDark}){
-      if(isDark){
-        return <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>{STARS.map((s,i)=><div key={i} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,width:s.sz,height:s.sz,borderRadius:"50%",background:"white",opacity:s.o,animation:`twinkle ${s.d}s ease-in-out infinite alternate`,animationDelay:`${i*.09}s`}}/>)}</div>;
-      }
-      // Light mode: soft pastel blob shapes
-      const blobs=[
-        {x:-10,y:-5,w:340,h:300,c:"rgba(196,181,253,.35)"},
-        {x:55,y:5,w:280,h:260,c:"rgba(147,197,253,.3)"},
-        {x:-5,y:45,w:220,h:200,c:"rgba(252,211,77,.2)"},
-        {x:60,y:55,w:300,h:280,c:"rgba(167,243,208,.25)"},
-        {x:20,y:80,w:350,h:300,c:"rgba(251,207,232,.3)"},
-      ];
-      return <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
-        {blobs.map((b,i)=><div key={i} style={{position:"absolute",left:`${b.x}%`,top:`${b.y}%`,width:b.w,height:b.h,borderRadius:"50%",background:b.c,filter:"blur(60px)",animation:`twinkle ${4+i}s ease-in-out infinite alternate`,animationDelay:`${i*.7}s`}}/>)}
-      </div>;
-    }
-
-    function Timeline({cur,disp,onClick}){
-      return <div style={{display:"flex",gap:"2px",alignItems:"flex-end",overflowX:"auto",scrollbarWidth:"none",padding:"4px 0",cursor:"pointer"}}>{Array.from({length:85},(_,w)=>{const wd=WEEK_MAP[w],isD=w===disp,isC=w===cur;return <div key={w} onClick={()=>onClick(w)} title={`שבוע ${w}`} style={{width:isD?7:isC?5:3,height:isD?30:isC?24:wd.leap?18:10,borderRadius:3,flexShrink:0,background:isD?"#6366f1":isC?"#94a3b8":(BARCOL[wd.status]||"#cbd5e6"),opacity:w<cur&&!isC&&!isD?.35:1,transition:"all 0.12s"}}/>})}</div>;
-    }
-
-    function ProgressBar({wn,leap,status}){
-      if(!leap||!leap.peakStart)return null;
-      const start=leap.restlessStart,end=leap.skillsEnd??leap.restlessEnd;
-      const pct=Math.max(0,Math.min(100,((wn-start)/(end-start))*100));
-      const daysLeft=(end-wn)*7;
-      const c=CFG[status];
-      return <div style={{marginBottom:11}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:11,color:c.text,opacity:.65}}>
-          <span>התקדמות בקפיצה</span>
-          <span>{daysLeft>0?`עוד ~${daysLeft} ימים`:"הקפיצה הסתיימה"}</span>
-        </div>
-        <div style={{background:"rgba(0,0,0,.1)",borderRadius:20,height:6,overflow:"hidden"}}>
-          <div style={{width:`${pct}%`,height:"100%",borderRadius:20,background:`linear-gradient(90deg,${c.accent}88,${c.accent})`,transition:"width .4s ease"}}/>
-        </div>
-      </div>;
-    }
-
-    function DetailSection({leap,status}){
-      const [open,setOpen]=useState(false);
-      if(!leap||(!leap.sleep&&!leap.feeding&&!leap.activities))return null;
-      const c=CFG[status];
-      return <div style={{marginTop:8}}>
-        <button onClick={()=>setOpen(o=>!o)} style={{width:"100%",padding:"9px 12px",border:`1px solid ${c.accent}44`,borderRadius:11,background:`${c.accent}12`,color:c.text,fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span>📖 טיפים מורחבים לשינה, תזונה ופעילויות</span>
-          <span style={{transition:"transform .2s",display:"inline-block",transform:open?"rotate(180deg)":"rotate(0deg)"}}>▾</span>
-        </button>
-        {open&&<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:8}}>
-          {leap.sleep&&<div style={{background:"rgba(99,102,241,.1)",borderRadius:11,padding:"10px 13px"}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:4}}>🌙 שינה והרגעה</div><div style={{fontSize:12.5,color:c.text,opacity:.85,lineHeight:1.55}}>{leap.sleep}</div></div>}
-          {leap.feeding&&<div style={{background:"rgba(16,185,129,.1)",borderRadius:11,padding:"10px 13px"}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:4}}>🍼 תזונה והנקה</div><div style={{fontSize:12.5,color:c.text,opacity:.85,lineHeight:1.55}}>{leap.feeding}</div></div>}
-          {leap.activities&&<div style={{background:"rgba(251,146,60,.1)",borderRadius:11,padding:"10px 13px"}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:4}}>🧸 פעילויות מומלצות</div><div style={{fontSize:12.5,color:c.text,opacity:.85,lineHeight:1.55}}>{leap.activities}</div></div>}
-        </div>}
-      </div>;
-    }
-
-    function Card({weekNum,isPast,isCurrent}){
-      const wn=Math.max(0,Math.min(84,weekNum));
-      const {status,leap}=WEEK_MAP[wn];
-      const c=CFG[status];
-      return <div style={{background:`linear-gradient(135deg,${c.g1},${c.g2})`,borderRadius:24,padding:22,border:`2px solid ${isCurrent?c.accent:"rgba(255,255,255,0.12)"}`,boxShadow:isCurrent?`0 12px 40px ${c.accent}44,0 2px 8px rgba(0,0,0,.1)`:"0 4px 20px rgba(0,0,0,.08)",opacity:isPast?.58:1,position:"relative",overflow:"hidden",transform:isCurrent?"scale(1.01)":"scale(1)",transition:"all .3s"}}>
-        <div style={{position:"absolute",top:-28,left:-28,width:120,height:120,borderRadius:"50%",background:`${c.accent}15`,pointerEvents:"none"}}/>
-        {isCurrent&&<div style={{position:"absolute",top:13,right:13,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:20}}>עכשיו</div>}
-        {isPast&&<div style={{position:"absolute",top:13,right:13,background:"rgba(0,0,0,.13)",color:c.text,fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>עבר</div>}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginTop:8,marginBottom:14}}>
-          <div>
-            <div style={{fontSize:11,color:c.text,opacity:.5,fontWeight:600,marginBottom:2}}>שבוע {wn} מהלידה</div>
-            <div style={{fontSize:19,fontWeight:800,color:c.text}}>{c.icon} {c.label}</div>
-            <div style={{fontSize:12,color:c.text,opacity:.45,marginTop:2}}>מצב: {c.mood}</div>
-          </div>
-          <div style={{fontSize:44,lineHeight:1,filter:"drop-shadow(0 2px 4px rgba(0,0,0,.15))"}}>{c.icon}</div>
-        </div>
-        {leap?<>
-          <div style={{background:`${c.accent}20`,borderRadius:13,padding:"9px 13px",marginBottom:11,display:"flex",alignItems:"center",gap:9}}>
-            <span style={{fontSize:22}}>{leap.emoji}</span>
-            <div style={{flex:1}}>
-              <div style={{fontSize:11,color:c.text,opacity:.5,fontWeight:600}}>{leap.isGrey?"תקופה מיוחדת":`קפיצה ${leap.leap} מתוך 10`}</div>
-              <div style={{fontSize:15,fontWeight:800,color:c.text}}>{leap.name}</div>
-            </div>
-            {leap.isBig&&<div style={{background:c.accent,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:10,flexShrink:0}}>★ גדולה</div>}
-          </div>
-          <ProgressBar wn={wn} leap={leap} status={status}/>
-          <p style={{fontSize:13,lineHeight:1.65,color:c.text,margin:"0 0 11px",opacity:.85}}>{leap.description}</p>
-          {status==="skills"&&<div style={{background:`${c.accent}18`,borderRadius:11,padding:"9px 12px",marginBottom:9}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:3}}>🌱 מיומנויות עכשיו</div><div style={{fontSize:12.5,color:c.text,opacity:.8,lineHeight:1.5}}>{leap.skills}</div></div>}
-          {status==="restless"&&<div style={{background:"rgba(255,255,255,.4)",borderRadius:11,padding:"9px 12px",marginBottom:9,borderRight:`3px solid ${c.accent}`}}><div style={{fontSize:12.5,color:c.text,opacity:.75,lineHeight:1.5}}>הקפיצה עוד לא הגיעה לשיאה — ייתכן שהתינוק יהיה קצת יותר חסר מנוחה השבוע.</div></div>}
-          <div style={{background:"rgba(255,255,255,.6)",borderRadius:11,padding:"9px 12px",marginBottom:8,borderRight:`3px solid ${c.accent}`}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:3}}>💡 טיפ להורה</div><div style={{fontSize:12.5,color:c.text,opacity:.8,lineHeight:1.5}}>{leap.tip}</div></div>
-          <DetailSection leap={leap} status={status}/>
-        </>:<div style={{background:"rgba(255,255,255,.5)",borderRadius:13,padding:"13px 15px"}}><p style={{fontSize:13,color:c.text,opacity:.7,margin:0,lineHeight:1.6}}>🌿 תקופה שקטה יחסית. התינוק מתאמן ומשכלל את הכישורים שרכש. משחק חופשי וזמן איכות הם הדבר הכי טוב עכשיו.</p></div>}
-      </div>;
-    }
-
-    function ShareButton({cur,disp}){
-      const {status,leap}=WEEK_MAP[Math.max(0,Math.min(84,disp??0))];
-      const doShare=()=>{
-        const cfg=CFG[status];
-        const leapTxt=leap?`${leap.emoji} ${leap.name}`:"שבוע שקט";
-        const text=`אנחנו בשבוע ${disp} – ${cfg.icon} ${cfg.label}!\n${leapTxt}\n\nבדקו מה השבוע אצלכם 👇\nhttps://nraybi.github.io/wonder-weeks/`;
-        navigator.share({title:"קפיצות הגדילה",text});
+    function showWwUpdateBanner(){
+      const isHe = (localStorage.getItem('ww_lang') || 'he') === 'he';
+      const bar = document.createElement('div');
+      bar.id = 'ww-update-banner';
+      bar.setAttribute('dir', isHe ? 'rtl' : 'ltr');
+      bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;display:flex;align-items:center;justify-content:center;gap:10px;font-family:"Segoe UI",Tahoma,sans-serif;font-size:13px;font-weight:700;box-shadow:0 4px 20px rgba(0,0,0,.35);animation:ww-slide-down .3s ease;';
+      bar.innerHTML = isHe
+        ? '🔄 גרסה חדשה זמינה <button id="ww-refresh-btn" style="background:#fff;color:#4f46e5;border:none;border-radius:20px;padding:6px 14px;font-weight:800;font-size:12px;">רענן</button>'
+        : '🔄 A new version is available <button id="ww-refresh-btn" style="background:#fff;color:#4f46e5;border:none;border-radius:20px;padding:6px 14px;font-weight:800;font-size:12px;">Refresh</button>';
+      document.body.appendChild(bar);
+      document.getElementById('ww-refresh-btn').onclick = () => {
+        wwRefreshing = true;
+        window.location.reload();
       };
-      return <button onClick={doShare} title="שתף" style={{padding:11,background:"rgba(99,102,241,.2)",border:"1px solid rgba(99,102,241,.4)",borderRadius:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-      </button>;
     }
+  </script>
+  <script type="text/babel">
+  const {useState,useEffect,useCallback,useRef,useMemo}=React;
 
-    function App(){
-      const [date,setDate]=useState(()=>localStorage.getItem("ww_date")||"");
-      const [ready,setReady]=useState(()=>!!localStorage.getItem("ww_date"));
-      const [offset,setOffset]=useState(0);
-      const [tab,setTab]=useState("card");
-      const [anim,setAnim]=useState(null);
-      const [ts,setTs]=useState(null);
-      const [ds,setDs]=useState(null);
-      const [isDark,setIsDark]=useState(()=>{const dark=localStorage.getItem("ww_theme")!=="light";document.body.style.background=dark?'#0a0f1e':'#faf8f5';return dark;});
-      const [installPrompt,setInstallPrompt]=useState(null);
-      const [installed,setInstalled]=useState(false);
-      React.useEffect(()=>{
-        const handler=e=>{e.preventDefault();setInstallPrompt(e);};
-        window.addEventListener('beforeinstallprompt',handler);
-        window.addEventListener('appinstalled',()=>{setInstalled(true);setInstallPrompt(null);});
-        return()=>window.removeEventListener('beforeinstallprompt',handler);
-      },[]);
-      const doInstall=()=>{if(!installPrompt)return;installPrompt.prompt();installPrompt.userChoice.then(()=>setInstallPrompt(null));};
-      const T=isDark?DARK:LIGHT;
-      const toggleTheme=()=>setIsDark(d=>{const n=!d;localStorage.setItem("ww_theme",n?"dark":"light");return n;});
-      const today=new Date().toISOString().split("T")[0];
-      const earliest=new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
-      const cur=ready&&date?getWeeks(date):null;
-      const disp=cur!==null?Math.max(0,Math.min(84,cur+offset)):null;
-      const go=useCallback((dir)=>{if(cur===null)return;setAnim(dir);setTimeout(()=>setAnim(null),280);if(dir===1)setOffset(o=>Math.min(84-cur,o+1));else setOffset(o=>Math.max(-cur,o-1));},[cur]);
+  // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
+  const LANG={
+    he:{
+      appName:"קפיצות הגדילה",appSub:"Wonder Weeks",
+      tabs:{leaps:"🌙 קפיצות",sleep:"😴 שינה",feed:"🍼 אוכל",settings:"⚙️ הגדרות"},
+      leaps:{weekLabel:"שבוע",fromBirth:"מהלידה",now:"עכשיו",of:"מתוך",
+        card:"כרטיס",allLeaps:"כל הקפיצות",today:"חזור להיום",
+        past:"עבר",inWeeks:"בעוד",weeks:"ש׳",bigLeap:"★ גדולה",
+        specialPeriod:"תקופה מיוחדת",leapOf:"קפיצה",outOf:"מתוך 10",
+        progress:"התקדמות בקפיצה",daysLeft:"עוד ~",days:"ימים",leapDone:"הקפיצה הסתיימה",
+        skillsNow:"🌱 מיומנויות עכשיו",tipTitle:"💡 טיפ להורה",expandTips:"📖 טיפים מורחבים",
+        sleepTip:"🌙 שינה והרגעה",feedTip:"🍼 תזונה והנקה",actTip:"🧸 פעילויות",
+        notYetPeak:"הקפיצה עוד לא הגיעה לשיאה — ייתכן שהתינוק יהיה קצת יותר חסר מנוחה השבוע.",
+        quietWeek:"🌿 תקופה שקטה יחסית. התינוק מתאמן ומשכלל את הכישורים שרכש.",
+        swipeHint:"← גלוש שמאלה לשבוע הבא",
+        leapStatus:{sunny:"שבוע שקט",restless:"עשוי להיות עצבני",fussy:"שיא הסערה",skills:"פריחת מיומנויות",grey:"תקופת האפור"},
+        leapMood:{sunny:"נינוח ומאושר",restless:"קצת חסר מנוחה",fussy:"עצבני ודורשני",skills:"סקרן ומתפתח",grey:"חרד וצמוד"},
+        disclaimer:"מבוסס על Wonder Weeks (van de Rijt & Plooij). לא הכל מדויק — כל תינוק יחיד.",
+      },
+      sleep:{
+        title:"מעקב שינה",startSleep:"התחל שינה",endSleep:"סיים שינה",
+        sleeping:"ישן עכשיו",awake:"ער",duration:"משך",
+        nextSleep:"שינה הבאה",nextIn:"בעוד ~",mins:"דק׳",hrs:"שע׳",
+        avgDuration:"ממוצע משך שינה",totalToday:"סה״כ שינה היום",
+        history:"היסטוריה",noSleeps:"עדיין אין שינות מתועדות",
+        deleteConfirm:"מחק שינה זו?",edit:"ערוך",delete:"מחק",
+        days:["א","ב","ג","ד","ה","ו","ש"],
+        patternTitle:"תבנית שינה — 7 ימים",
+        stats:"סטטיסטיקות",avgBedtime:"ממוצע כניסה לשינה",
+        naiveNote:"התחזית מבוססת על שינות אתמול",
+      },
+      feed:{
+        title:"מעקב האכלה",logFeed:"תעד ארוחה",
+        types:{breast:"הנקה",bottle:"בקבוק",solid:"מוצקים"},
+        nextFeed:"ארוחה הבאה",nextIn:"בעוד ~",
+        avgInterval:"ממוצע בין ארוחות",totalToday:"ארוחות היום",
+        history:"היסטוריה",noFeeds:"עדיין אין ארוחות מתועדות",
+        delete:"מחק",amount:"כמות (מ\"ל)",optional:"אופציונלי",save:"שמור",cancel:"ביטול",
+        prepared:"הוכן (מ\"ל)",consumed:"נשתה (מ\"ל)",finishedAll:"סיים הכל",finished:"סיים בקבוק",
+        days:["א","ב","ג","ד","ה","ו","ש"],
+        patternTitle:"תבנית האכלה — 7 ימים",
+        naiveNote:"התחזית מבוססת על ממוצע הפרשים",
+        bottleToday:"צריכת בקבוק היום",
+        addWeightHint:"הוסיפו את משקל התינוק בהגדרות כדי לראות יעד צריכה יומי מומלץ",
+      },
+      settings:{
+        title:"הגדרות",birthDate:"תאריך לידה",birthHint:"Wonder Weeks מחשב ממועד הלידה המשוער.",
+        dateSet:"קבע תאריך",theme:"מצב תצוגה",dark:"כהה",light:"בהיר",
+        lang:"שפה",install:"התקן אפליקציה",installed:"מותקן ✓",
+        share:"שתף",clearData:"נקה נתוני מעקב",clearConfirm:"האם למחוק את כל נתוני השינה, האכלה והמשקל?",
+        yes:"כן, מחק",no:"ביטול",
+        weight:"משקל התינוק",weightKg:"משקל (ק\"ג)",updateWeight:"עדכן משקל",
+        noWeight:"טרם הוזן משקל",recordedOn:"נמדד ב־",
+      },
+    },
+    en:{
+      appName:"Baby Leaps",appSub:"Wonder Weeks Tracker",
+      tabs:{leaps:"🌙 Leaps",sleep:"😴 Sleep",feed:"🍼 Feed",settings:"⚙️ Settings"},
+      leaps:{weekLabel:"Week",fromBirth:"from birth",now:"Now",of:"of",
+        card:"Card",allLeaps:"All Leaps",today:"Back to Today",
+        past:"Done",inWeeks:"in",weeks:"w",bigLeap:"★ Big",
+        specialPeriod:"Special Period",leapOf:"Leap",outOf:"of 10",
+        progress:"Leap progress",daysLeft:"~",days:"days left",leapDone:"Leap complete",
+        skillsNow:"🌱 Skills emerging now",tipTitle:"💡 Parent tip",expandTips:"📖 Extended tips",
+        sleepTip:"🌙 Sleep & soothing",feedTip:"🍼 Feeding & nursing",actTip:"🧸 Activities",
+        notYetPeak:"Leap hasn't peaked yet — baby may be a bit more restless this week.",
+        quietWeek:"🌿 Relatively quiet week. Baby is practicing and consolidating recently acquired skills.",
+        swipeHint:"← Swipe left for next week",
+        leapStatus:{sunny:"Sunny week",restless:"May be fussy",fussy:"Storm peak",skills:"Skills emerging",grey:"Grey period"},
+        leapMood:{sunny:"Calm & happy",restless:"A bit restless",fussy:"Fussy & demanding",skills:"Curious & developing",grey:"Anxious & clingy"},
+        disclaimer:"Based on Wonder Weeks (van de Rijt & Plooij). Timing varies — every baby is unique.",
+      },
+      sleep:{
+        title:"Sleep Tracker",startSleep:"Start Sleep",endSleep:"End Sleep",
+        sleeping:"Sleeping",awake:"Awake",duration:"Duration",
+        nextSleep:"Next Sleep",nextIn:"In ~",mins:"min",hrs:"hr",
+        avgDuration:"Avg sleep duration",totalToday:"Total sleep today",
+        history:"History",noSleeps:"No sleep sessions logged yet",
+        deleteConfirm:"Delete this sleep session?",edit:"Edit",delete:"Delete",
+        days:["Su","Mo","Tu","We","Th","Fr","Sa"],
+        patternTitle:"Sleep Pattern — 7 Days",
+        stats:"Statistics",avgBedtime:"Avg bedtime",
+        naiveNote:"Prediction based on yesterday's pattern",
+      },
+      feed:{
+        title:"Feed Tracker",logFeed:"Log Feed",
+        types:{breast:"Breastfeed",bottle:"Bottle",solid:"Solids"},
+        nextFeed:"Next Feed",nextIn:"In ~",
+        avgInterval:"Avg interval",totalToday:"Feeds today",
+        history:"History",noFeeds:"No feeds logged yet",
+        delete:"Delete",amount:"Amount (ml)",optional:"optional",save:"Save",cancel:"Cancel",
+        prepared:"Prepared (ml)",consumed:"Consumed (ml)",finishedAll:"Finished it all",finished:"Finished bottle",
+        days:["Su","Mo","Tu","We","Th","Fr","Sa"],
+        patternTitle:"Feed Pattern — 7 Days",
+        naiveNote:"Prediction based on average intervals",
+        bottleToday:"Bottle intake today",
+        addWeightHint:"Add baby's weight in Settings to see a recommended daily target",
+      },
+      settings:{
+        title:"Settings",birthDate:"Birth Date",birthHint:"Wonder Weeks counts from estimated due date.",
+        dateSet:"Set Date",theme:"Display Mode",dark:"Dark",light:"Light",
+        lang:"Language",install:"Install App",installed:"Installed ✓",
+        share:"Share",clearData:"Clear tracking data",clearConfirm:"Delete all sleep, feed, and weight data?",
+        yes:"Yes, delete",no:"Cancel",
+        weight:"Baby's Weight",weightKg:"Weight (kg)",updateWeight:"Update Weight",
+        noWeight:"No weight recorded yet",recordedOn:"as of",
+      },
+    },
+  };
 
-      return <div dir="rtl" style={{minHeight:"100vh",background:T.bg,fontFamily:"'Segoe UI',Tahoma,'Arial Hebrew',sans-serif",overflowX:"hidden",transition:"background .3s"}}>
-        <style>{`@keyframes twinkle{from{opacity:.06}to{opacity:.65}}@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}@keyframes sl{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}@keyframes sr{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}::-webkit-scrollbar{display:none}input[type=date]{direction:ltr;color-scheme:${T.ds}}button:hover{filter:brightness(1.1)}`}</style>
-        <Stars isDark={isDark}/>
-        <div style={{position:"relative",zIndex:1,maxWidth:430,margin:"0 auto",padding:"20px 16px 48px",display:"flex",flexDirection:"column",gap:15,animation:"fadeUp .5s ease"}}>
+  // ─── WONDER WEEKS DATA ───────────────────────────────────────────────────────
+  const LEAPS=[
+    {leap:1,name:{he:"עולם התחושות",en:"World of Sensations"},emoji:"✨",isBig:false,
+     restlessStart:4,restlessEnd:4,peakStart:5,peakEnd:5,skillsStart:6,skillsEnd:6,
+     description:{he:"המוח מעבד לפתע מידע חושי בצורה חדשה לגמרי. ריחות, אורות, מגע – הכל מציף ומרגש ומבהיל.",en:"The brain suddenly processes sensory input in a whole new way. Smells, lights, touch — everything is overwhelming."},
+     skills:{he:"עוקב בעיניים אחרי פנים, מגיב לקולות מוכרים, מחייך חיוך חברתי ראשון",en:"Tracks faces with eyes, responds to familiar voices, first social smile"},
+     tip:{he:"חיבוק צמוד, עיניים בגובה עיניו, קול רך וחם. הקרבה שלך היא העולם שלו.",en:"Close cuddles, eye contact, soft warm voice. Your closeness is his whole world."},
+     sleep:{he:"השינה עשויה להיות מקוטעת. עמעום אורות, רעש לבן ועיטוף יכולים לסנן גירויים.",en:"Sleep may be disrupted. Dim lights, white noise and swaddling can help filter stimulation."},
+     feeding:{he:"ייתכן רצון לינוק בתדירות גבוהה ('האכלות צבר'). ההאכלה משמשת להרגעה – זה טבעי.",en:"Cluster feeding is normal. Nursing serves as comfort right now — completely natural."},
+     activities:{he:"צעצועים בשחור-לבן. דברו אליו פנים-אל-פנים. מגע עור-לעור יעיל מאוד בהרגעה.",en:"Black-and-white toys. Face-to-face talk. Skin-to-skin contact is very soothing."}},
+    {leap:2,name:{he:"עולם הדפוסים",en:"World of Patterns"},emoji:"🔷",isBig:false,
+     restlessStart:7,restlessEnd:7,peakStart:8,peakEnd:8,skillsStart:9,skillsEnd:10,
+     description:{he:"הוא מתחיל לזהות דפוסים חוזרים – פנים, קולות, קצב. העולם מתחיל להסתדר.",en:"He starts recognizing repeating patterns — faces, sounds, rhythm. The world starts making sense."},
+     skills:{he:"מחייך חיוך חברתי, עוקב אחר עצמים נעים, מקשיב לשינויי קצב",en:"Social smile, tracks moving objects, listens to rhythm changes"},
+     tip:{he:"שירים עם חזרות, הרבה שיחה ישירה אליו, גרימות פנים מוגזמות.",en:"Repetitive songs, lots of direct talk, exaggerated facial expressions."},
+     sleep:{he:"זה הזמן להתחיל טקס שינה קבוע וקצר. הוא יתחיל לקשר את התבנית לשינה.",en:"Start a short consistent bedtime routine. He'll begin associating the pattern with sleep."},
+     feeding:{he:"התינוק עשוי להיות מוסח. נסו להאכיל בחדר שקט וחשוך יחסית.",en:"Baby may be distracted during feeds. Try feeding in a quiet, dimmer room."},
+     activities:{he:"תלו מובייל מעל המיטה. תנו לו לחקור את כפות הידיים שלו.",en:"Hang a mobile above the crib. Let him explore his own hands."}},
+    {leap:3,name:{he:"עולם המעברים",en:"World of Smooth Transitions"},emoji:"🌊",isBig:false,
+     restlessStart:12,restlessEnd:12,peakStart:12,peakEnd:12,skillsStart:13,skillsEnd:13,
+     description:{he:"תנועה רצופה, שינויי צליל – הכל נתפס כרצף ולא כקפיצות נפרדות. מרתק ומבלבל.",en:"Continuous motion, changing sounds — everything is perceived as a flow, not separate jumps. Fascinating and confusing."},
+     skills:{he:"מסתכל על ידיו בעניין, מנסה להגיע לעצמים, מגביה ראש ליד בבטן",en:"Examines hands with interest, reaches for objects, lifts head during tummy time"},
+     tip:{he:"נדנדה עדינה, מוזיקה עם עליות וירידות. אמבטיה חמימה עם תנועות מים.",en:"Gentle rocking, music with rises and falls. Warm bath with gentle water movements."},
+     sleep:{he:"לקראת גיל 3 חודשים ייצור המלטונין מתחיל להסתדר. הקפידו על כ-90 דקות עירות בין תנומות.",en:"Around 3 months melatonin production starts regulating. Aim for ~90 min wake windows between naps."},
+     feeding:{he:"קפיצת גדילה פיזית של גיל 3 חודשים. אם השדיים מרגישים 'ריקים' – הייצור מתייעל.",en:"Physical growth spurt around 3 months. If breasts feel 'empty' — supply is just getting more efficient."},
+     activities:{he:"טיסה ב'אווירון' על הידיים. שטיח פעילות עם מרקמים שונים.",en:"'Airplane' holds. Activity mat with different textures."}},
+    {leap:4,name:{he:"עולם האירועים",en:"World of Events"},emoji:"🎬",isBig:true,
+     restlessStart:15,restlessEnd:16,peakStart:17,peakEnd:19,skillsStart:20,skillsEnd:21,
+     description:{he:"'רגרסיית השינה של 4 חודשים' – זה בדיוק זה! הוא גילה שפעולות יוצרות תוצאות.",en:"The infamous '4-month sleep regression' — this is it! He discovered that actions create results."},
+     skills:{he:"מחפש עצמים שנפלו, צוחק בקול, מתחיל להתגלגל, אוחז עצמים",en:"Searches for dropped objects, laughs out loud, starts rolling, grasps objects"},
+     tip:{he:"משחקי סיבה ותוצאה (לחיצה→קול), שיר קוקו, הגב בעקביות לקריאותיו.",en:"Cause-and-effect toys (press→sound), peekaboo, respond consistently to his calls."},
+     sleep:{he:"⚠️ משבר השינה של 4 חודשים! מחזורי השינה משתנים ודומים למבוגר. עלולים להתעורר בין מחזורים (כל ~45 דק').",en:"⚠️ 4-month sleep regression! Sleep cycles change to adult-like patterns. May wake between cycles (~every 45 min)."},
+     feeding:{he:"העולם מעניין יותר מלאכול. נסו סביבה נטולת גירויים לארוחות היום.",en:"The world is more interesting than eating. Try a distraction-free environment for daytime feeds."},
+     activities:{he:"משחקי 'קוקו'. תנו לו לזרוק צעצועים והרימו עבורו. צעצועים שמפיקים צליל בלחיצה.",en:"Peekaboo games. Let him drop toys and pick them up for him. Sound-producing toys."}},
+    {leap:5,name:{he:"עולם היחסים",en:"World of Relationships"},emoji:"🔗",isBig:true,
+     restlessStart:23,restlessEnd:24,peakStart:26,peakEnd:26,skillsStart:27,skillsEnd:28,
+     description:{he:"מרחק, כיוון, גודל, מהירות – הוא מבין שאתה יכול להתרחק ממנו. חרדת הנטישה מתחילה.",en:"Distance, direction, size, speed — he understands you can move away from him. Separation anxiety begins."},
+     skills:{he:"זוחל, עומד בתמיכה, חרדת זרים, הברות כפולות (מא-מא, דא-דא)",en:"Crawls, stands with support, stranger anxiety, double syllables (ma-ma, da-da)"},
+     tip:{he:"תמיד אמור ביי-ביי לפני שאתה עוזב, חזור בהבטחה, הרבה מחבואים.",en:"Always say bye-bye before leaving, return as promised, lots of peekaboo."},
+     sleep:{he:"חרדת נטישה ראשונית. התינוק עשוי לבכות ברגע שתצאו בערב.",en:"Initial separation anxiety. Baby may cry the moment you leave at bedtime."},
+     feeding:{he:"שלב הטעימות והמוצקים (גיל חצי שנה)! הציעו מרקמים שונים.",en:"Time for solids (around 6 months)! Offer different textures. Eat with him so he can imitate."},
+     activities:{he:"משחקי הכנסה והוצאה מקופסה. פזרו צעצועים במרחק לעודד זחילה.",en:"In-and-out box games. Scatter toys at a distance to encourage crawling."}},
+    {leap:"grey",name:{he:"תקופת האפור",en:"Grey Period"},emoji:"🌫️",isGrey:true,isBig:false,
+     restlessStart:29,restlessEnd:30,peakStart:null,peakEnd:null,skillsStart:null,skillsEnd:null,
+     description:{he:"לא קפיצה! הוא פשוט גילה שאתה יכול ללכת ולהשאיר אותו. הידיעה הזו מפחידה אותו עמוקות.",en:"Not a leap! He simply discovered you can leave and abandon him. This knowledge frightens him deeply."},
+     skills:{he:"לומד שאנשים ועצמים קיימים גם כשנעלמים מהעין",en:"Learning that people and objects exist even when out of sight (object permanence)"},
+     tip:{he:"שחק מצאתיך, תן לו לראות אותך מתרחק וחוזר, הרבה חיבוקים.",en:"Play peekaboo, let him see you leave and return, lots of hugs."},
+     sleep:{he:"צמידות מוגברת בשעות הלילה היא נורמלית לחלוטין.",en:"Increased clinginess at night is completely normal."},
+     feeding:{he:"אין שינוי מיוחד – המשיכו בשגרה הקיימת.",en:"No special change — continue your current routine."},
+     activities:{he:"מחבואים פשוטים. הראו לו שאתם נעלמים וחוזרים.",en:"Simple hide-and-seek. Show him you disappear and come back."}},
+    {leap:6,name:{he:"עולם הקטגוריות",en:"World of Categories"},emoji:"🗂️",isBig:false,
+     restlessStart:34,restlessEnd:35,peakStart:36,peakEnd:37,skillsStart:38,skillsEnd:42,
+     description:{he:"הוא מסווג את העולם – כלבים הם כלבים, כוסות הן כוסות. כל דבר שייך לקבוצה.",en:"He categorizes the world — dogs are dogs, cups are cups. Everything belongs to a group."},
+     skills:{he:"מחקה קולות חיות, מוצא עצמים מוסתרים, מבין את המילה 'לא'",en:"Imitates animal sounds, finds hidden objects, understands 'no'"},
+     tip:{he:"שמות לכל דבר, ספרים עם חיות, הסבר מה כל עצם ולמה הוא מיוחד.",en:"Name everything, animal books, explain what each object is and why it's special."},
+     sleep:{he:"התפתחות מוטורית מהירה גורמת לרצון לתרגל במקום לישון. תנו המון זמן רצפה ביום.",en:"Rapid motor development causes urge to practice instead of sleep. Give lots of floor time during the day."},
+     feeding:{he:"הוא רוצה להאכיל את עצמו! הציעו 'אוכל אצבעות' (ברוקולי רך, אבוקדו).",en:"He wants to self-feed! Offer finger foods (soft broccoli, avocado strips)."},
+     activities:{he:"מיון חפצים לקופסאות לפי צבעים. קריאת ספרים מצוירים עם קולות חיות.",en:"Sort objects into boxes by color. Picture books with animal sounds."}},
+    {leap:7,name:{he:"עולם הרצפים",en:"World of Sequences"},emoji:"🔢",isBig:false,
+     restlessStart:43,restlessEnd:43,peakStart:44,peakEnd:46,skillsStart:47,skillsEnd:49,
+     description:{he:"פעולה→פעולה→תוצאה. הוא מבין סדר פעולות ויכול לחקות רצפים שלמים.",en:"Action→action→result. He understands sequences and can imitate complete routines."},
+     skills:{he:"מכניס ומוציא עצמים, עורם ומפיל, עוזר להתלבש, מחקה פעילויות יום-יום",en:"Puts in and takes out objects, stacks and knocks down, helps dress, imitates daily activities"},
+     tip:{he:"טקסים עקביים (אמבטיה→פיג'מה→שיר→שינה), אפשר לו להשתתף בכל שלב.",en:"Consistent routines (bath→pajamas→song→sleep), let him participate in each step."},
+     sleep:{he:"הוא כבר מבין את רצף טקס השינה. עלול לבכות באמבטיה אם עייף מדי.",en:"He understands the sleep routine sequence. May cry in the bath if overtired."},
+     feeding:{he:"שלבו אותו ברצף הכנת האוכל: הראו איך מוזגים מים לכוס.",en:"Include him in food prep sequences: show how to pour water into a cup."},
+     activities:{he:"בניית מגדל קוביות (והריסתו!). צעצועי השחלת טבעות. התאמת צורות.",en:"Build block towers (and knock them down!). Ring stacking toys. Shape sorters."}},
+    {leap:8,name:{he:"עולם התוכניות",en:"World of Programs"},emoji:"🧩",isBig:false,
+     restlessStart:51,restlessEnd:51,peakStart:51,peakEnd:54,skillsStart:55,skillsEnd:56,
+     description:{he:"הוא יכול לשנות את האמצע של רצף – לבחור דרך אחרת להגיע לאותה מטרה. פתרון בעיות אמיתי!",en:"He can change the middle of a sequence — choose a different path to the same goal. Real problem solving!"},
+     skills:{he:"הולך בביטחון, שפה מתפתחת במהירות, מחקה פעילויות בית",en:"Walks confidently, language developing rapidly, imitates household activities"},
+     tip:{he:"תן לו לבחור בין שתי אפשרויות, עודד ניסוי ושגיאה, אל תמהר לעזור.",en:"Offer two choices, encourage trial and error, resist the urge to help immediately."},
+     sleep:{he:"ייתכן מעבר טבעי משתי תנומות לתנומה אחת ארוכה. מעבר מאתגר שלוקח שבועות.",en:"Possible natural transition from two naps to one. Challenging transition that takes weeks."},
+     feeding:{he:"מעבר לתזונת משפחה רגילה. עודדו שימוש עצמאי בכפית ומזלג, גם אם האוכל נופל.",en:"Transition to regular family food. Encourage independent use of spoon/fork, even if food falls."},
+     activities:{he:"משחקי דמיון פשוטים (להאכיל בובה). משימות קטנות: להביא נעליים, לזרוק טיטול לפח.",en:"Simple pretend play (feeding a doll). Small tasks: bring shoes, throw diaper in trash."}},
+    {leap:9,name:{he:"עולם העקרונות",en:"World of Principles"},emoji:"⚖️",isBig:true,
+     restlessStart:58,restlessEnd:59,peakStart:61,peakEnd:61,skillsStart:62,skillsEnd:63,
+     description:{he:"כללים, שוויון, 'זה שלי' – הוא מבין עקרונות מופשטים שמנהלים את העולם.",en:"Rules, fairness, 'mine' — he understands abstract principles that govern the world."},
+     skills:{he:"מנהל משא ומתן, מבין הוגן/לא הוגן, מדבר במשפטים קצרים",en:"Negotiates, understands fair/unfair, speaks in short sentences"},
+     tip:{he:"כללים עקביים ובהירים, הסבר תמיד את הסיבות, הכר ברגשות שלו בשם.",en:"Consistent clear rules, always explain reasons, name his feelings."},
+     sleep:{he:"הם בודקים גבולות גם סביב השינה ('עוד סיפור!', 'מים!'). טקס קבוע הוא קריטי.",en:"Testing limits around bedtime too ('one more story!', 'water!'). Consistent routine is critical."},
+     feeding:{he:"בררנות אכילה עלולה להופיע כדרך לבטא שליטה. ההורה מחליט מה ומתי, הילד מחליט כמה.",en:"Picky eating may appear as a way to assert control. Parent decides what and when, child decides how much."},
+     activities:{he:"אפשרו לבחור מתוך 2 אופציות. הרבה משחקי חוץ לפריקת אנרגיה.",en:"Allow choices between 2 options. Lots of outdoor play to release energy."}},
+    {leap:10,name:{he:"עולם המערכות",en:"World of Systems"},emoji:"🌐",isBig:true,
+     restlessStart:65,restlessEnd:66,peakStart:65,peakEnd:72,skillsStart:73,skillsEnd:84,
+     description:{he:"הקפיצה הגדולה והאחרונה. הוא מבין שהוא חלק ממשפחה, מחברה, מעולם שלם.",en:"The last big leap. He understands he is part of a family, a society, a whole world."},
+     skills:{he:"משחק תפקידים מורכב, מבין מושג הזמן, עוזר ושיתוף פעולה אמיתי",en:"Complex role play, understands time concepts, genuine helping and cooperation"},
+     tip:{he:"כלל אותו בשגרות המשפחה, תן לו אחריות קטנה, הכר בתרומה שלו.",en:"Include him in family routines, give small responsibilities, acknowledge his contributions."},
+     sleep:{he:"מושגי זמן פשוטים כמו 'מחר' מתחילים להיות מובנים.",en:"Simple time concepts like 'tomorrow' start to be understood."},
+     feeding:{he:"שיתוף מלא בארוחות משפחתיות. יכולת משופרת לשבת ליד השולחן.",en:"Full participation in family meals. Improved ability to sit at the table for longer."},
+     activities:{he:"לגו דופלו או מגנטים. עזרה ממשית במטלות (ניגוב שולחן). ציור וצביעה.",en:"Duplo or magnets. Real help with chores (wiping table). Drawing and coloring."}},
+  ];
 
-          <div style={{textAlign:"center",padding:"10px 0 2px",position:"relative"}}>
-            <button onClick={toggleTheme} style={{position:"absolute",left:0,top:10,background:"none",border:"none",cursor:"pointer",fontSize:20,opacity:.7,padding:4,zIndex:10}}>{isDark?"☀️":"🌙"}</button>
-            {installPrompt&&!installed&&<button onClick={doInstall} style={{position:"absolute",right:0,top:10,background:"rgba(99,102,241,.2)",border:"1px solid rgba(99,102,241,.4)",borderRadius:10,cursor:"pointer",padding:"4px 10px",zIndex:10,fontSize:11,fontWeight:700,color:"#a5b4fc",display:"flex",alignItems:"center",gap:4}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v13M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
-              התקן אפליקציה
-            </button>}
-            <div style={{fontSize:46,marginBottom:4,filter:T.glow}}>🌙</div>
-            <h1 style={{color:T.h1,fontSize:27,fontWeight:900,margin:0,letterSpacing:"-0.03em",textShadow:T.h1s}}>קפיצות הגדילה</h1>
-            <p style={{color:T.sub,fontSize:13,margin:"5px 0 0"}}>Wonder Weeks · מה קורה לתינוק שלך עכשיו</p>
-          </div>
+  function buildWeekMap(){
+    const map={};
+    for(let w=0;w<=84;w++)map[w]={status:"sunny",leap:null};
+    for(const leap of LEAPS){
+      if(leap.isGrey){for(let w=leap.restlessStart;w<=leap.restlessEnd;w++)map[w]={status:"grey",leap};}
+      else{
+        for(let w=leap.restlessStart;w<=leap.restlessEnd;w++)if(map[w].status==="sunny")map[w]={status:"restless",leap};
+        if(leap.peakStart!==null)for(let w=leap.peakStart;w<=leap.peakEnd;w++)map[w]={status:"fussy",leap};
+        if(leap.skillsStart!==null)for(let w=leap.skillsStart;w<=leap.skillsEnd;w++)map[w]={status:"skills",leap};
+      }
+    }
+    return map;
+  }
+  const WEEK_MAP=buildWeekMap();
+  function getWeeks(d){return Math.max(0,Math.min(84,Math.floor((Date.now()-new Date(d))/(7*24*60*60*1000))));}
+  function fmtDur(ms){const tot=Math.round(ms/60000);const h=Math.floor(tot/60);const m=tot%60;return h>0?`${h}ש׳ ${m>0?m+"ד׳":""}`:`${m}ד׳`;}
+  function fmtDurEn(ms){const tot=Math.round(ms/60000);const h=Math.floor(tot/60);const m=tot%60;return h>0?`${h}h${m>0?" "+m+"m":""}`:`${m}m`;}
+  function fmtTime(ts){return new Date(ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",hour12:false});}
+  function dayKey(ts){const d=new Date(ts);return`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;}
+  function startOfDay(ts){const d=new Date(ts);d.setHours(0,0,0,0);return d.getTime();}
+  function minutesInDay(ts){const d=new Date(ts);return d.getHours()*60+d.getMinutes();}
+  // datetime-local input helpers (values are interpreted/produced in LOCAL time)
+  function tsToDateStr(ts){const d=new Date(ts);const p=n=>String(n).padStart(2,"0");return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+  function tsToTimeStr(ts){const d=new Date(ts);const p=n=>String(n).padStart(2,"0");return`${p(d.getHours())}:${p(d.getMinutes())}`;}
+  function dateTimeToTs(dateStr,timeStr){return new Date(`${dateStr}T${timeStr}`).getTime();}
 
-          <div style={{background:T.card,backdropFilter:"blur(24px)",borderRadius:22,padding:20,border:`1px solid ${T.cardB}`,boxShadow:"0 8px 32px rgba(0,0,0,.15)"}}>
-            <label style={{color:T.sub,fontSize:12,fontWeight:700,display:"block",marginBottom:8,letterSpacing:".05em"}}>📅 תאריך לידה (או מועד לידה משוער)</label>
-            <input type="date" value={date} max={today} min={earliest}
-              onChange={e=>{const v=e.target.value;setDate(v);setReady(false);setOffset(0);if(v)localStorage.setItem("ww_date",v);else localStorage.removeItem("ww_date");}}
-              style={{width:"100%",background:T.inBg,border:`1px solid ${T.inB}`,borderRadius:13,padding:"11px 14px",color:T.inC,fontSize:16,outline:"none",marginBottom:12}}/>
-            <div style={{background:T.infoBg,borderRadius:10,padding:"8px 12px",marginBottom:14,fontSize:11,color:T.infoC,lineHeight:1.5}}>
-              ⚠️ Wonder Weeks מחשב ממועד הלידה המשוער. אם נולד בדיוק בזמן – ההפרש זניח.
-            </div>
-            <button onClick={()=>{if(date){localStorage.setItem("ww_date",date);setReady(true);setOffset(0);}}} disabled={!date}
-              style={{width:"100%",padding:13,border:"none",borderRadius:14,background:date?"linear-gradient(135deg,#6366f1,#8b5cf6)":"rgba(128,128,128,.2)",color:date?"#fff":T.sub,fontSize:15,fontWeight:800,cursor:date?"pointer":"not-allowed",boxShadow:date?"0 4px 20px rgba(99,102,241,.5)":"none",transition:"all .2s"}}>
-              {date?"🔍 מה קורה עכשיו?":"בחר תאריך"}
-            </button>
-          </div>
+  // NOAA solar calculation — returns {sunriseMin, sunsetMin} in local minutes-of-day
+  function calcSunTimes(lat,lng,date){
+    const d=date||new Date();
+    const N=Math.floor((d-new Date(d.getFullYear(),0,0))/86400000);
+    const lngHour=lng/15;
+    const calc=(isRise)=>{
+      const t=N+((isRise?6:18)-lngHour)/24;
+      const M=(0.9856*t)-3.289;
+      let L=M+(1.916*Math.sin(M*Math.PI/180))+(0.020*Math.sin(2*M*Math.PI/180))+282.634;
+      L=(L+360)%360;
+      let RA=(180/Math.PI)*Math.atan(0.91764*Math.tan(L*Math.PI/180));
+      RA=(RA+360)%360;
+      const Lq=Math.floor(L/90)*90, RAq=Math.floor(RA/90)*90;
+      RA=RA+(Lq-RAq); RA/=15;
+      const sinDec=0.39782*Math.sin(L*Math.PI/180);
+      const cosDec=Math.cos(Math.asin(sinDec));
+      const cosH=(Math.cos(90.833*Math.PI/180)-(sinDec*Math.sin(lat*Math.PI/180)))/(cosDec*Math.cos(lat*Math.PI/180));
+      if(cosH>1||cosH<-1)return null; // sun never rises/sets (polar)
+      let H=isRise?360-(180/Math.PI)*Math.acos(cosH):(180/Math.PI)*Math.acos(cosH);
+      H/=15;
+      const T=H+RA-(0.06571*t)-6.622;
+      let UT=(T-lngHour+24)%24;
+      return UT;
+    };
+    const utToLocalMin=(ut)=>{
+      const utcDate=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0));
+      utcDate.setUTCMinutes(utcDate.getUTCMinutes()+Math.round(ut*60));
+      return utcDate.getHours()*60+utcDate.getMinutes();
+    };
+    const riseUT=calc(true), setUT=calc(false);
+    return{
+      sunriseMin:riseUT!==null?utToLocalMin(riseUT):360,
+      sunsetMin:setUT!==null?utToLocalMin(setUT):1200,
+    };
+  }
 
-          {ready&&cur!==null&&(<>
-            <div style={{background:T.tlBg,backdropFilter:"blur(20px)",borderRadius:18,padding:"12px 15px",border:`1px solid ${T.tlB}`}}>
-              <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div style={{textAlign:"center",flexShrink:0}}><div style={{color:T.sub,fontSize:10,fontWeight:700}}>עכשיו</div><div style={{color:T.text,fontSize:26,fontWeight:900,lineHeight:1}}>{cur}</div></div>
-                <div style={{flex:1,overflow:"hidden"}}><Timeline cur={cur} disp={disp} onClick={w=>setOffset(w-cur)}/></div>
-                <div style={{textAlign:"center",flexShrink:0}}><div style={{color:T.sub,fontSize:10,fontWeight:700}}>מתוך</div><div style={{color:T.sub,fontSize:26,fontWeight:900,lineHeight:1}}>84</div></div>
+  // ─── THEME ───────────────────────────────────────────────────────────────────
+  const DARK={
+    bg:"linear-gradient(160deg,#0a0f1e 0%,#0f172a 45%,#1a0a2e 100%)",
+    surface:"rgba(255,255,255,.07)",surfaceB:"rgba(255,255,255,.12)",
+    surface2:"rgba(255,255,255,.04)",surface2B:"rgba(255,255,255,.08)",
+    text:"#f1f5f9",sub:"#64748b",muted:"#334155",
+    accent:"#6366f1",accentBg:"rgba(99,102,241,.2)",accentB:"rgba(99,102,241,.4)",accentText:"#a5b4fc",
+    input:"rgba(255,255,255,.08)",inputB:"rgba(255,255,255,.15)",inputText:"#f1f5f9",
+    btnText:"#e2e8f0",btnDis:"#334155",
+    ds:"dark",h1:"#f8fafc",h1s:"0 0 30px rgba(196,181,253,.4)",
+    glow:"drop-shadow(0 0 16px rgba(196,181,253,.7))",
+    navBg:"rgba(10,15,30,.85)",navB:"rgba(255,255,255,.1)",
+    sleepColor:"#6366f1",feedColor:"#f97316",
+    sleepBg:"rgba(99,102,241,.15)",feedBg:"rgba(249,115,22,.15)",
+    rowBg:"rgba(255,255,255,.04)",rowBgHover:"rgba(255,255,255,.07)",
+    sheetBg:"#141328",rowSolidBg:"#171633",
+  };
+  const LIGHT={
+    bg:"#faf8f5",
+    surface:"rgba(255,255,255,.85)",surfaceB:"rgba(99,102,241,.12)",
+    surface2:"rgba(255,255,255,.7)",surface2B:"rgba(0,0,0,.06)",
+    text:"#1e293b",sub:"#64748b",muted:"#94a3b8",
+    accent:"#6366f1",accentBg:"rgba(99,102,241,.08)",accentB:"rgba(99,102,241,.3)",accentText:"#4f46e5",
+    input:"rgba(255,255,255,.9)",inputB:"rgba(0,0,0,.12)",inputText:"#1e293b",
+    btnText:"#1e293b",btnDis:"#94a3b8",
+    ds:"light",h1:"#1e293b",h1s:"none",
+    glow:"none",
+    navBg:"rgba(250,248,245,.92)",navB:"rgba(0,0,0,.08)",
+    sleepColor:"#6366f1",feedColor:"#f97316",
+    sleepBg:"rgba(99,102,241,.08)",feedBg:"rgba(249,115,22,.08)",
+    rowBg:"rgba(0,0,0,.02)",rowBgHover:"rgba(0,0,0,.04)",
+    sheetBg:"#ffffff",rowSolidBg:"#ffffff",
+  };
+
+  const CFG={
+    sunny:   {icon:"☀️", g1:"#d1fae5",g2:"#ecfdf5",accent:"#10b981",text:"#064e3b"},
+    restless:{icon:"🌥️",g1:"#ffedd5",g2:"#fff7ed",accent:"#f97316",text:"#7c2d12"},
+    fussy:   {icon:"⛈️",g1:"#fee2e2",g2:"#fff1f1",accent:"#ef4444",text:"#7f1d1d"},
+    skills:  {icon:"🌤️",g1:"#dbeafe",g2:"#eff6ff",accent:"#3b82f6",text:"#1e3a8a"},
+    grey:    {icon:"🌫️",g1:"#ede9fe",g2:"#f5f3ff",accent:"#8b5cf6",text:"#4c1d95"},
+  };
+  const BARCOL={sunny:"#4ade80",restless:"#fb923c",fussy:"#ef4444",skills:"#60a5fa",grey:"#a78bfa"};
+  const STARS=Array.from({length:50},()=>({x:Math.random()*100,y:Math.random()*100,sz:Math.random()*2+.5,d:Math.random()*4+2,o:Math.random()*.4+.08}));
+
+  // ─── STORAGE ─────────────────────────────────────────────────────────────────
+  function loadLS(key,def){try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;}}
+  function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch{}}
+
+  // ─── COMPONENTS ──────────────────────────────────────────────────────────────
+  function Stars({isDark}){
+    if(isDark)return<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>{STARS.map((s,i)=><div key={i} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,width:s.sz,height:s.sz,borderRadius:"50%",background:"white",opacity:s.o,animation:`twinkle ${s.d}s ease-in-out infinite alternate`,animationDelay:`${i*.09}s`}}/>)}</div>;
+    const blobs=[{x:-10,y:-5,w:340,h:300,c:"rgba(196,181,253,.3)"},{x:55,y:5,w:280,h:260,c:"rgba(147,197,253,.25)"},{x:-5,y:45,w:220,h:200,c:"rgba(252,211,77,.18)"},{x:60,y:55,w:300,h:280,c:"rgba(167,243,208,.22)"},{x:20,y:80,w:350,h:300,c:"rgba(251,207,232,.25)"}];
+    return<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>{blobs.map((b,i)=><div key={i} style={{position:"absolute",left:`${b.x}%`,top:`${b.y}%`,width:b.w,height:b.h,borderRadius:"50%",background:b.c,filter:"blur(60px)",animation:`twinkle ${4+i}s ease-in-out infinite alternate`,animationDelay:`${i*.7}s`}}/>)}</div>;
+  }
+
+  // ─── HAPTICS ─────────────────────────────────────────────────────────────────
+  function haptic(ms=10){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch{} }
+
+  // ─── ICON SET (stroke-style, consistent across all platforms) ──────────────
+  function IconMoonStar({size=20,color="currentColor"}){
+    return<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>;
+  }
+  function IconMoonZzz({size=20,color="currentColor"}){
+    return<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 13.79A7 7 0 1 1 10.4 5 5.5 5.5 0 0 0 17.5 13.79z"/><path d="M15 3.5h5l-3.2 4H20"/></svg>;
+  }
+  function IconBottle({size=20,color="currentColor"}){
+    return<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2.5h6"/><path d="M10 2.5v3.3a2 2 0 0 1-.65 1.47L8.1 8.4A3 3 0 0 0 7 10.7V19a2.5 2.5 0 0 0 2.5 2.5h5A2.5 2.5 0 0 0 17 19v-8.3a3 3 0 0 0-1.1-2.33l-1.25-1.02A2 2 0 0 1 14 5.8V2.5"/><path d="M7.3 13.5h9.4"/></svg>;
+  }
+  function IconGear({size=20,color="currentColor"}){
+    return<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
+  }
+  function IconPlus({size=22,color="#fff"}){
+    return<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>;
+  }
+  function IconTrash({size=17,color="#fff"}){
+    return<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>;
+  }
+  function IconScale({size=17,color="currentColor"}){
+    return<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M6 8h12M4 8l2 8a2 2 0 0 0 2 1.6h.5a2 2 0 0 0 2-1.6L12 8M12 8l1.5 8a2 2 0 0 0 2 1.6h.5a2 2 0 0 0 2-1.6L20 8"/></svg>;
+  }
+
+  // ─── COMPACT DATE+TIME FIELD (time is primary; date collapses to a small pill) ──
+  function DateTimeField({dateStr,timeStr,onDateChange,onTimeChange,T,lang,maxDate}){
+    const[expanded,setExpanded]=useState(false);
+    const todayStr=tsToDateStr(Date.now());
+    const yestStr=tsToDateStr(Date.now()-86400000);
+    const dateLabel=dateStr===todayStr?(lang==="he"?"היום":"Today")
+      :dateStr===yestStr?(lang==="he"?"אתמול":"Yesterday")
+      :new Date(dateStr+"T00:00").toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"});
+    return(
+      <div>
+        <div style={{display:"flex",gap:8}}>
+          <input type="time" value={timeStr} onChange={e=>onTimeChange(e.target.value)}
+            style={{flex:1,padding:"11px 10px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:17,fontWeight:700,outline:"none",colorScheme:T.ds,textAlign:"center"}}/>
+          <button onClick={()=>{haptic(6);setExpanded(e=>!e);}} style={{padding:"0 13px",background:expanded?T.accentBg:T.surface2,border:`1px solid ${expanded?T.accentB:T.surface2B}`,borderRadius:13,color:expanded?T.accentText:T.sub,fontSize:12.5,fontWeight:700,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+            📅 {dateLabel}
+          </button>
+        </div>
+        {expanded&&<input type="date" value={dateStr} max={maxDate} onChange={e=>onDateChange(e.target.value)}
+          style={{width:"100%",marginTop:8,padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:15,outline:"none",colorScheme:T.ds,animation:"fadeUp .2s ease"}}/>}
+      </div>
+    );
+  }
+
+  // ─── BOTTOM SHEET (native modal pattern, swipe-to-dismiss) ──────────────────
+  function BottomSheet({open,onClose,children,T}){
+    const[dragY,setDragY]=useState(0);
+    const startY=useRef(null);
+    const dragging=useRef(false);
+    useEffect(()=>{document.body.style.overflow=open?"hidden":"";return()=>{document.body.style.overflow="";};},[open]);
+    if(!open)return null;
+    const onTS=e=>{startY.current=e.touches[0].clientY;dragging.current=true;};
+    const onTM=e=>{if(!dragging.current)return;const d=e.touches[0].clientY-startY.current;if(d>0)setDragY(d);};
+    const onTE=()=>{dragging.current=false;if(dragY>85){haptic(8);onClose();}setDragY(0);};
+    return(
+      <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end"}}>
+        <div onClick={()=>{haptic(6);onClose();}} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(3px)",animation:"fadeUp .25s ease"}}/>
+        <div onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+          style={{position:"relative",width:"100%",maxWidth:480,margin:"0 auto",background:T.sheetBg,borderTopLeftRadius:26,borderTopRightRadius:26,padding:"10px 18px calc(22px + env(safe-area-inset-bottom,0px))",transform:`translateY(${dragY}px)`,transition:dragY?"none":"transform .35s cubic-bezier(.32,.72,0,1)",animation:dragY?undefined:"sheetUp .32s cubic-bezier(.32,.72,0,1)",boxShadow:"0 -20px 60px rgba(0,0,0,.5)",border:`1px solid ${T.surfaceB}`,borderBottom:"none"}}>
+          <div style={{width:38,height:4,borderRadius:3,background:"rgba(128,128,128,.35)",margin:"4px auto 16px"}}/>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── SWIPEABLE ROW (swipe-left reveals delete, tap opens edit) ─────────────
+  function SwipeableRow({children,onDelete,onTap,T}){
+    const[tx,setTx]=useState(0);
+    const startX=useRef(null);
+    const dragging=useRef(false);
+    const moved=useRef(false);
+    const REVEAL=72;
+    const onTS=e=>{startX.current=e.touches[0].clientX;dragging.current=true;moved.current=false;};
+    const onTM=e=>{
+      if(!dragging.current)return;
+      const raw=e.touches[0].clientX-startX.current;
+      if(Math.abs(raw)>6)moved.current=true;
+      setTx(Math.max(-REVEAL-14,Math.min(0,raw)));
+    };
+    const onTE=()=>{
+      dragging.current=false;
+      setTx(t=>{const snap=t<-REVEAL/2?-REVEAL:0; if(snap!==0)haptic(6); return snap;});
+    };
+    const onTap2=()=>{
+      if(moved.current)return;
+      if(tx!==0){setTx(0);return;}
+      if(onTap)onTap();
+    };
+    return(
+      <div style={{position:"relative",overflow:"hidden",borderRadius:12}}>
+        <div style={{position:"absolute",top:0,bottom:0,right:0,width:REVEAL,display:"flex"}}>
+          <button onClick={()=>{haptic(15);onDelete();}} style={{flex:1,background:"linear-gradient(135deg,#ef4444,#dc2626)",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:tx<=-REVEAL?"0 12px 12px 0":0}}>
+            <IconTrash size={16}/>
+          </button>
+        </div>
+        <div onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onTap2}
+          style={{transform:`translateX(${tx}px)`,transition:dragging.current?"none":"transform .25s cubic-bezier(.32,.72,0,1)",background:T.rowSolidBg,position:"relative",borderRadius:12,touchAction:"pan-y",cursor:onTap?"pointer":"default"}}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── EMPTY STATE (soft icon badge instead of plain text) ────────────────────
+  function EmptyState({Icon,text,accent,T}){
+    return<div style={{textAlign:"center",padding:"26px 10px",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+      <div style={{width:52,height:52,borderRadius:"50%",background:`${accent}15`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <Icon size={24} color={accent}/>
+      </div>
+      <div style={{color:T.muted,fontSize:12.5,maxWidth:210,lineHeight:1.5}}>{text}</div>
+    </div>;
+  }
+
+  // ─── SHIMMER (skeleton loading placeholder) ─────────────────────────────────
+  function Shimmer({height,T}){
+    return<div style={{height,borderRadius:8,background:`linear-gradient(90deg,${T.surface2} 25%,${T.surfaceB} 50%,${T.surface2} 75%)`,backgroundSize:"200% 100%",animation:"shimmer 1.4s ease-in-out infinite"}}/>;
+  }
+
+  // ─── LEAPS TAB ───────────────────────────────────────────────────────────────
+  function LeapsTab({T,S,lang,birthDate,setTab}){
+    const[offset,setOffset]=useState(0);
+    const[subTab,setSubTab]=useState("card");
+    const[anim,setAnim]=useState(null);
+    const[ts,setTs]=useState(null);
+    const[ds2,setDs2]=useState(null);
+    const cur=birthDate?getWeeks(birthDate):null;
+    const disp=cur!==null?Math.max(0,Math.min(84,cur+offset)):null;
+    const go=useCallback((dir)=>{haptic(8);setAnim(dir);setTimeout(()=>setAnim(null),280);if(dir===1)setOffset(o=>Math.min(84-(cur||0),o+1));else setOffset(o=>Math.max(-(cur||0),o-1));},[cur]);
+
+    if(!birthDate)return(
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,padding:"56px 24px",textAlign:"center",animation:"fadeUp .4s ease"}}>
+        <div style={{width:84,height:84,borderRadius:"50%",background:`linear-gradient(135deg,${T.accentBg},transparent)`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 40px ${T.accentB}`}}>
+          <IconMoonStar size={38} color={T.accentText}/>
+        </div>
+        <div style={{color:T.text,fontSize:19,fontWeight:800}}>{lang==="he"?"בואו נתחיל":"Let's get started"}</div>
+        <div style={{color:T.sub,fontSize:14,lineHeight:1.6,maxWidth:240}}>{lang==="he"?"הוסיפו את תאריך הלידה כדי לעקוב אחר קפיצות הגדילה, שינה והאכלה":"Add the birth date to start tracking growth leaps, sleep and feeding"}</div>
+        <button onClick={()=>{haptic(10);setTab("settings");}} style={{padding:"13px 26px",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff",borderRadius:16,fontSize:14,fontWeight:700,boxShadow:"0 6px 24px rgba(99,102,241,.45)",display:"flex",alignItems:"center",gap:8}}>
+          <IconGear size={16}/>{lang==="he"?"הגדרות":"Settings"}
+        </button>
+      </div>
+    );
+
+    const wd=WEEK_MAP[disp??0];
+    const{status,leap}=wd;
+    const c=CFG[status];
+    const lname=leap?leap.name[lang]:"";
+
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:12,padding:"0 0 16px"}}>
+        {/* Timeline */}
+        <div style={{background:T.surface,backdropFilter:"blur(20px)",borderRadius:16,padding:"10px 14px",border:`1px solid ${T.surfaceB}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{textAlign:"center",flexShrink:0}}><div style={{color:T.sub,fontSize:10,fontWeight:700}}>{S.leaps.now}</div><div style={{color:T.text,fontSize:24,fontWeight:900,lineHeight:1}}>{cur}</div></div>
+            <div style={{flex:1,overflow:"hidden"}}>
+              <div style={{display:"flex",gap:"2px",alignItems:"flex-end",overflowX:"auto",scrollbarWidth:"none",padding:"4px 0"}}>
+                {Array.from({length:85},(_,w)=>{const wd2=WEEK_MAP[w],isD=w===disp,isC=w===cur;return<div key={w} onClick={()=>setOffset(w-(cur||0))} title={`${S.leaps.weekLabel} ${w}`} style={{width:isD?7:isC?5:3,height:isD?30:isC?24:wd2.leap?18:10,borderRadius:3,flexShrink:0,background:isD?"#6366f1":isC?"#94a3b8":(BARCOL[wd2.status]||"#475569"),opacity:w<(cur||0)&&!isC&&!isD?.35:1,transition:"all .12s",cursor:"pointer"}}/>})}
               </div>
             </div>
+            <div style={{textAlign:"center",flexShrink:0}}><div style={{color:T.sub,fontSize:10,fontWeight:700}}>{S.leaps.of}</div><div style={{color:T.sub,fontSize:24,fontWeight:900,lineHeight:1}}>84</div></div>
+          </div>
+        </div>
 
+        {/* Sub-tabs */}
+        <div style={{display:"flex",gap:8}}>
+          {[["card",S.leaps.card],["all",S.leaps.allLeaps]].map(([t,l])=>(
+            <button key={t} onClick={()=>setSubTab(t)} style={{flex:1,padding:"9px 0",background:subTab===t?T.accentBg:T.surface,border:`1px solid ${subTab===t?T.accentB:T.surfaceB}`,borderRadius:12,color:subTab===t?T.accentText:T.sub,fontSize:13,fontWeight:700,transition:"all .15s"}}>{l}</button>
+          ))}
+        </div>
+
+        {subTab==="card"&&<>
+          {/* Card */}
+          <div onTouchStart={e=>setTs(e.touches[0].clientX)} onTouchEnd={e=>{if(ts===null)return;const d=ts-e.changedTouches[0].clientX;if(Math.abs(d)>44)go(d>0?-1:1);setTs(null);}} onMouseDown={e=>setDs2(e.clientX)} onMouseUp={e=>{if(ds2===null)return;const d=ds2-e.clientX;if(Math.abs(d)>44)go(d>0?-1:1);setDs2(null);}} style={{userSelect:"none",cursor:ds2?"grabbing":"grab",animation:anim===1?"sl .26s ease":anim===-1?"sr .26s ease":undefined}}>
+            <LeapCard weekNum={disp??0} isPast={(disp??0)<(cur??0)} isCurrent={disp===cur} T={T} S={S} lang={lang}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setOffset(0)} style={{flex:1,padding:11,background:offset===0?T.accentBg:T.surface,border:`1px solid ${offset===0?T.accentB:T.surfaceB}`,borderRadius:12,color:offset===0?T.accentText:T.btnText,fontSize:13,fontWeight:700,transition:"all .15s"}}>{S.leaps.today}</button>
+            <ShareBtn disp={disp??0} lang={lang} S={S}/>
+          </div>
+          <div style={{textAlign:"center",color:T.muted,fontSize:11}}>{S.leaps.swipeHint}</div>
+        </>}
+
+        {subTab==="all"&&(
+          <div style={{background:T.surface2,borderRadius:16,padding:12,border:`1px solid ${T.surface2B}`,display:"flex",flexDirection:"column",gap:6}}>
+            {LEAPS.map(lp=>{
+              const end=lp.skillsEnd??lp.restlessEnd;
+              const past=(cur??0)>end,active=(cur??0)>=lp.restlessStart&&(cur??0)<=end,away=lp.restlessStart-(cur??0);
+              return<div key={lp.leap} onClick={()=>{setOffset(lp.restlessStart-(cur??0));setSubTab("card");}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 11px",borderRadius:12,background:active?T.accentBg:T.rowBg,border:`1px solid ${active?T.accentB:T.surface2B}`,cursor:"pointer",opacity:past?.43:1,transition:"all .14s"}}>
+                <span style={{fontSize:19}}>{lp.emoji}</span>
+                <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:active?T.accentText:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lp.isGrey?"":lp.leap+". "}{lp.name[lang]}</div><div style={{fontSize:11,color:T.sub}}>{S.leaps.weekLabel} {lp.restlessStart}–{end}{lp.isBig&&<span style={{color:"#f59e0b",marginRight:5}}> ★</span>}</div></div>
+                <div style={{fontSize:11,padding:"3px 8px",borderRadius:20,flexShrink:0,fontWeight:700,background:past?"rgba(128,128,128,.15)":active?T.accentBg:"rgba(128,128,128,.08)",color:past?T.sub:active?T.accentText:T.sub}}>
+                  {past?("✓ "+S.leaps.past):active?"עכשיו":`${S.leaps.inWeeks} ${away}${S.leaps.weeks}`}
+                </div>
+              </div>;
+            })}
+          </div>
+        )}
+
+        <div style={{background:T.surface2,borderRadius:12,padding:"10px 13px",border:`1px solid ${T.surface2B}`,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px 12px"}}>
+          {Object.entries(CFG).map(([k,v])=><div key={k} style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:13}}>{v.icon}</span><span style={{fontSize:11,color:T.sub}}>{S.leaps.leapStatus[k]}</span></div>)}
+        </div>
+        <p style={{color:T.muted,fontSize:11,textAlign:"center",lineHeight:1.7}}>{S.leaps.disclaimer}</p>
+      </div>
+    );
+  }
+
+  function LeapCard({weekNum,isPast,isCurrent,T,S,lang}){
+    const[expanded,setExpanded]=useState(false);
+    const wn=Math.max(0,Math.min(84,weekNum));
+    const{status,leap}=WEEK_MAP[wn];
+    const c=CFG[status];
+    const statusLabel=S.leaps.leapStatus[status];
+    const moodLabel=S.leaps.leapMood[status];
+    return<div style={{background:`linear-gradient(135deg,${c.g1},${c.g2})`,borderRadius:22,padding:20,border:`2px solid ${isCurrent?c.accent:"rgba(255,255,255,.15)"}`,boxShadow:isCurrent?`0 8px 32px ${c.accent}44`:"0 4px 16px rgba(0,0,0,.08)",opacity:isPast?.58:1,position:"relative",overflow:"hidden",transition:"all .3s"}}>
+      <div style={{position:"absolute",top:-24,left:-24,width:100,height:100,borderRadius:"50%",background:`${c.accent}12`,pointerEvents:"none"}}/>
+      {isCurrent&&<div style={{position:"absolute",top:12,right:12,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:18}}>עכשיו</div>}
+      {isPast&&<div style={{position:"absolute",top:12,right:12,background:"rgba(0,0,0,.12)",color:c.text,fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:18}}>{S.leaps.past}</div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginTop:6,marginBottom:12}}>
+        <div><div style={{fontSize:11,color:c.text,opacity:.5,fontWeight:600,marginBottom:1}}>{S.leaps.weekLabel} {wn} {S.leaps.fromBirth}</div><div style={{fontSize:18,fontWeight:800,color:c.text}}>{c.icon} {statusLabel}</div><div style={{fontSize:12,color:c.text,opacity:.4,marginTop:1}}>{moodLabel}</div></div>
+        <div style={{fontSize:40,lineHeight:1}}>{c.icon}</div>
+      </div>
+      {leap&&<>
+        <div style={{background:`${c.accent}1a`,borderRadius:12,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:20}}>{leap.emoji}</span>
+          <div style={{flex:1}}><div style={{fontSize:11,color:c.text,opacity:.5,fontWeight:600}}>{leap.isGrey?S.leaps.specialPeriod:`${S.leaps.leapOf} ${leap.leap} ${S.leaps.outOf}`}</div><div style={{fontSize:14,fontWeight:800,color:c.text}}>{leap.name[lang]}</div></div>
+          {leap.isBig&&<div style={{background:c.accent,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:9,flexShrink:0}}>{S.leaps.bigLeap}</div>}
+        </div>
+        {/* Progress bar */}
+        {leap.peakStart&&(()=>{const start=leap.restlessStart,end=leap.skillsEnd??leap.restlessEnd,pct=Math.max(0,Math.min(100,((wn-start)/(end-start))*100)),dl=(end-wn)*7;return<div style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:c.text,opacity:.55,marginBottom:4}}><span>{S.leaps.progress}</span><span>{dl>0?`${S.leaps.daysLeft}${dl} ${S.leaps.days}`:S.leaps.leapDone}</span></div><div style={{background:"rgba(0,0,0,.1)",borderRadius:20,height:5,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",borderRadius:20,background:`linear-gradient(90deg,${c.accent}88,${c.accent})`,transition:"width .4s"}}/></div></div>;})()}
+        <p style={{fontSize:13,lineHeight:1.6,color:c.text,margin:"0 0 10px",opacity:.85}}>{leap.description[lang]}</p>
+        {status==="skills"&&<div style={{background:`${c.accent}18`,borderRadius:10,padding:"8px 11px",marginBottom:8}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:2}}>{S.leaps.skillsNow}</div><div style={{fontSize:12.5,color:c.text,opacity:.8,lineHeight:1.5}}>{leap.skills[lang]}</div></div>}
+        {status==="restless"&&<div style={{background:"rgba(255,255,255,.38)",borderRadius:10,padding:"8px 11px",marginBottom:8,borderRight:`3px solid ${c.accent}`}}><div style={{fontSize:12.5,color:c.text,opacity:.75,lineHeight:1.5}}>{S.leaps.notYetPeak}</div></div>}
+        <div style={{background:"rgba(255,255,255,.55)",borderRadius:10,padding:"8px 11px",marginBottom:8,borderRight:`3px solid ${c.accent}`}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:2}}>{S.leaps.tipTitle}</div><div style={{fontSize:12.5,color:c.text,opacity:.8,lineHeight:1.5}}>{leap.tip[lang]}</div></div>
+        <button onClick={()=>setExpanded(e=>!e)} style={{width:"100%",padding:"8px 11px",border:`1px solid ${c.accent}44`,borderRadius:10,background:`${c.accent}12`,color:c.text,fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span>{S.leaps.expandTips}</span><span style={{transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(180deg)":"rotate(0deg)"}}>▾</span>
+        </button>
+        {expanded&&<div style={{display:"flex",flexDirection:"column",gap:7,marginTop:7}}>
+          {leap.sleep&&<div style={{background:"rgba(99,102,241,.1)",borderRadius:10,padding:"9px 12px"}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:3}}>{S.leaps.sleepTip}</div><div style={{fontSize:12.5,color:c.text,opacity:.85,lineHeight:1.5}}>{leap.sleep[lang]}</div></div>}
+          {leap.feeding&&<div style={{background:"rgba(16,185,129,.1)",borderRadius:10,padding:"9px 12px"}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:3}}>{S.leaps.feedTip}</div><div style={{fontSize:12.5,color:c.text,opacity:.85,lineHeight:1.5}}>{leap.feeding[lang]}</div></div>}
+          {leap.activities&&<div style={{background:"rgba(251,146,60,.1)",borderRadius:10,padding:"9px 12px"}}><div style={{fontSize:11,fontWeight:800,color:c.text,marginBottom:3}}>{S.leaps.actTip}</div><div style={{fontSize:12.5,color:c.text,opacity:.85,lineHeight:1.5}}>{leap.activities[lang]}</div></div>}
+        </div>}
+      </>}
+      {!leap&&<div style={{background:"rgba(255,255,255,.45)",borderRadius:12,padding:"12px 14px"}}><p style={{fontSize:13,color:c.text,opacity:.7,margin:0,lineHeight:1.6}}>{S.leaps.quietWeek}</p></div>}
+    </div>;
+  }
+
+  function ShareBtn({disp,lang,S}){
+    const{status,leap}=WEEK_MAP[Math.max(0,Math.min(84,disp??0))];
+    const doShare=()=>{
+      const cfg=CFG[status];
+      const ln=leap?leap.name[lang]:(lang==="he"?"שבוע שקט":"Quiet week");
+      const url="https://nraybi.github.io/wonder-weeks/";
+      const text=lang==="he"?`אנחנו בשבוע ${disp} – ${cfg.icon}\n${ln}\n\nבדקו מה השבוע אצלכם 👇\n${url}`:`We're in week ${disp} – ${cfg.icon}\n${ln}\n\nCheck your week 👇\n${url}`;
+      navigator.share({title:lang==="he"?"קפיצות הגדילה":"Baby Leaps",text});
+    };
+    return<button onClick={doShare} title={S.settings.share} style={{padding:11,background:"rgba(99,102,241,.18)",border:"1px solid rgba(99,102,241,.35)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    </button>;
+  }
+
+  // ─── PATTERN GRID (7-day heatmap) ────────────────────────────────────────────
+  function PatternGrid({events,color,bgColor,T,S,type}){
+    const[ready,setReady]=useState(false);
+    useEffect(()=>{const t=setTimeout(()=>setReady(true),240);return()=>clearTimeout(t);},[]);
+
+    const days=useMemo(()=>{
+      const result=[];
+      const now=Date.now();
+      for(let i=6;i>=0;i--){
+        const dayStart=startOfDay(now-i*86400000);
+        const dayEnd=dayStart+86400000;
+        const dayEvents=events.filter(e=>e.start>=dayStart&&e.start<dayEnd);
+        result.push({dayStart,events:dayEvents});
+      }
+      return result;
+    },[events]);
+
+    const CELL_H=200; // pixels representing 24h
+    const dayNames=S[type].days;
+
+    if(!ready)return<div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
+      <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:10}}>{S[type].patternTitle}</div>
+      <div style={{display:"flex",gap:4}}>
+        {Array.from({length:7},(_,i)=><div key={i} style={{flex:1}}><Shimmer height={CELL_H} T={T}/></div>)}
+      </div>
+    </div>;
+
+    return<div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`,animation:"fadeUp .3s ease"}}>
+      <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:10}}>{S[type].patternTitle}</div>
+      <div style={{display:"flex",gap:4}}>
+        {/* Time axis */}
+        <div style={{display:"flex",flexDirection:"column",justifyContent:"space-between",height:CELL_H,paddingBottom:20,flexShrink:0}}>
+          {["00","06","12","18","24"].map(h=><div key={h} style={{fontSize:9,color:T.muted,lineHeight:1}}>{h}</div>)}
+        </div>
+        {/* Day columns */}
+        {days.map(({dayStart,events:dayEvts},di)=>{
+          const dayLabel=dayNames[(new Date(dayStart)).getDay()];
+          return<div key={di} style={{flex:1,display:"flex",flexDirection:"column",gap:3}}>
+            <div style={{height:CELL_H,background:T.surface2,borderRadius:6,position:"relative",overflow:"hidden"}}>
+              {/* Hour grid lines */}
+              {[6,12,18].map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${(h/24)*100}%`,height:1,background:"rgba(128,128,128,.12)"}}/>)}
+              {type==="sleep"&&dayEvts.map((ev,ei)=>{
+                const startMin=minutesInDay(ev.start);
+                const endMin=ev.end?minutesInDay(ev.end):Math.min(minutesInDay(ev.start)+60,1440);
+                const durMin=endMin-startMin;
+                const topPct=(startMin/1440)*100;
+                const hPct=Math.max((durMin/1440)*100,1.5);
+                return<div key={ei} style={{position:"absolute",left:2,right:2,top:`${topPct}%`,height:`${hPct}%`,background:color,borderRadius:3,opacity:.85}}/>;
+              })}
+              {type==="feed"&&dayEvts.map((ev,ei)=>{
+                const min=minutesInDay(ev.start);
+                const topPct=(min/1440)*100;
+                return<div key={ei} style={{position:"absolute",left:2,right:2,top:`calc(${topPct}% - 3px)`,height:6,background:color,borderRadius:3,opacity:.9}}/>;
+              })}
+            </div>
+            <div style={{fontSize:10,color:T.sub,textAlign:"center",fontWeight:600}}>{dayLabel}</div>
+          </div>;
+        })}
+      </div>
+    </div>;
+  }
+
+  // ─── CIRCULAR TIMELINE CANVAS ───────────────────────────────────────────────
+  // Capsule sleep blocks sit ON the arc; dashed = predicted; solid = logged
+  function CircularTimeline({sleeps,activeSleep,nextPred,now,onToggle,S,lang,sunTimes}){
+    const sunriseMin=sunTimes?.sunriseMin??360;
+    const sunsetMin=sunTimes?.sunsetMin??1200;
+    const canvasRef=useRef(null);
+    const SIZE=320;
+    const CX=SIZE/2, CY=SIZE/2;
+    const R=118; // track radius
+    const todayStart=startOfDay(Date.now());
+    const todaySleeps=sleeps.filter(s=>s.start>=todayStart);
+
+    // minutes-of-day → canvas angle (midnight = top)
+    const m2a=m=>(m/1440)*Math.PI*2-Math.PI/2;
+    // angle + radius → {x,y}
+    const polar=(a,r)=>({x:CX+Math.cos(a)*r, y:CY+Math.sin(a)*r});
+
+    useEffect(()=>{
+      const canvas=canvasRef.current; if(!canvas)return;
+      const dpr=window.devicePixelRatio||1;
+      canvas.width=SIZE*dpr; canvas.height=SIZE*dpr;
+      canvas.style.width=SIZE+"px"; canvas.style.height=SIZE+"px";
+      const ctx=canvas.getContext("2d"); ctx.scale(dpr,dpr);
+      ctx.clearRect(0,0,SIZE,SIZE);
+
+      // ── base track ring ──
+      ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2);
+      ctx.strokeStyle="rgba(255,255,255,.06)"; ctx.lineWidth=22; ctx.stroke();
+      ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2);
+      ctx.strokeStyle="rgba(99,102,241,.08)"; ctx.lineWidth=18; ctx.stroke();
+
+      // ── draw a sleep block as a thick arc capsule ──
+      const drawArc=(startMin,endMin,solid,glowing)=>{
+        const a1=m2a(startMin), a2=m2a(Math.min(endMin,1439));
+        if(solid){
+          // glow pass
+          if(glowing){
+            ctx.beginPath(); ctx.arc(CX,CY,R,a1,a2);
+            ctx.strokeStyle="rgba(139,92,246,.4)"; ctx.lineWidth=26;
+            ctx.shadowBlur=20; ctx.shadowColor="#8b5cf6"; ctx.stroke(); ctx.shadowBlur=0;
+          }
+          // solid fill
+          ctx.beginPath(); ctx.arc(CX,CY,R,a1,a2);
+          ctx.strokeStyle=glowing?"#a78bfa":"rgba(139,92,246,.7)";
+          ctx.lineWidth=18; ctx.lineCap="round"; ctx.stroke();
+          // inner highlight
+          ctx.beginPath(); ctx.arc(CX,CY,R,a1,a2);
+          ctx.strokeStyle="rgba(255,255,255,.18)"; ctx.lineWidth=4; ctx.lineCap="round"; ctx.stroke();
+        } else {
+          // dashed predicted
+          ctx.beginPath(); ctx.arc(CX,CY,R,a1,a2);
+          ctx.strokeStyle="rgba(139,92,246,.35)"; ctx.lineWidth=18; ctx.lineCap="round"; ctx.stroke();
+          ctx.setLineDash([5,6]);
+          ctx.beginPath(); ctx.arc(CX,CY,R,a1,a2);
+          ctx.strokeStyle="rgba(200,180,255,.55)"; ctx.lineWidth=2; ctx.lineCap="round"; ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      };
+
+      // ── actual sleeps today ──
+      todaySleeps.forEach(s=>{
+        const sm=minutesInDay(s.start);
+        const em=s.end?minutesInDay(s.end):minutesInDay(now);
+        drawArc(sm,em,true,!!activeSleep&&!s.end);
+      });
+
+      // ── predicted sleeps (next 2 from yesterday) ──
+      if(nextPred&&nextPred.predictions){
+        nextPred.predictions.forEach(p=>{
+          const durMin=Math.round((p.durMs||5400000)/60000);
+          drawArc(p.startMin, p.startMin+durMin, false, false);
+        });
+      }
+
+      // ── sunrise anchor (real local time) ──
+      const sunA=m2a(sunriseMin); const sunP=polar(sunA,R);
+      ctx.beginPath(); ctx.arc(sunP.x,sunP.y,12,0,Math.PI*2);
+      ctx.fillStyle="#1e1b3a"; ctx.fill();
+      ctx.beginPath(); ctx.arc(sunP.x,sunP.y,12,0,Math.PI*2);
+      ctx.strokeStyle="#f59e0b"; ctx.lineWidth=2;
+      ctx.shadowBlur=16; ctx.shadowColor="#f59e0b"; ctx.stroke(); ctx.shadowBlur=0;
+
+      // ── sunset anchor (real local time) ──
+      const moonA=m2a(sunsetMin); const moonP=polar(moonA,R);
+      ctx.beginPath(); ctx.arc(moonP.x,moonP.y,12,0,Math.PI*2);
+      ctx.fillStyle="#1e1b3a"; ctx.fill();
+      ctx.beginPath(); ctx.arc(moonP.x,moonP.y,12,0,Math.PI*2);
+      ctx.strokeStyle="#fb923c"; ctx.lineWidth=2; ctx.stroke();
+
+      // ── current time dot ──
+      const nowA=m2a(minutesInDay(now)); const nowP=polar(nowA,R);
+      ctx.beginPath(); ctx.arc(nowP.x,nowP.y,6,0,Math.PI*2);
+      ctx.fillStyle="#fff"; ctx.shadowBlur=12; ctx.shadowColor="#fff"; ctx.fill(); ctx.shadowBlur=0;
+
+    },[sleeps,now,nextPred,sunriseMin,sunsetMin]);
+
+    // ── HTML capsule pills along the arc ──
+    const capsules=useMemo(()=>{
+      const caps=[];
+      const PILL_R=R+38;
+      todaySleeps.forEach((s,i)=>{
+        const sm=minutesInDay(s.start);
+        const em=s.end?minutesInDay(s.end):minutesInDay(now);
+        const midAngle=m2a((sm+em)/2);
+        const {x,y}=polar(midAngle,PILL_R);
+        const dur=s.end?s.end-s.start:now-s.start;
+        caps.push({x,y,label:fmtTime(s.start),sublabel:fmtDur(dur),solid:true,active:!s.end});
+      });
+      if(nextPred?.predictions){
+        nextPred.predictions.slice(0,3).forEach(p=>{
+          const durMin=Math.round((p.durMs||5400000)/60000);
+          const midAngle=m2a(p.startMin+durMin/2);
+          const {x,y}=polar(midAngle,PILL_R);
+          caps.push({x,y,label:fmtTime(new Date(startOfDay(Date.now())+p.startMin*60000)),sublabel:"~"+Math.round(p.durMs/3600000*10)/10+(lang==="he"?"ש׳":"h"),solid:false,active:false});
+        });
+      }
+      return caps;
+    },[sleeps,now,nextPred]);
+
+    const activeDur=activeSleep?now-activeSleep.start:null;
+
+    return(
+      <div style={{position:"relative",width:SIZE,height:SIZE,margin:"0 auto",flexShrink:0}}>
+        <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,borderRadius:"50%"}}/>
+        {/* Capsule pills */}
+        {capsules.map((cap,i)=>(
+          <div key={i} style={{
+            position:"absolute", left:cap.x, top:cap.y,
+            transform:"translate(-50%,-50%)",
+            background:"rgba(15,12,40,.88)",
+            border:`1px ${cap.solid?"solid":"dashed"} ${cap.active?"rgba(167,139,250,.9)":"rgba(139,92,246,.5)"}`,
+            borderRadius:20, padding:"4px 9px",
+            display:"flex",flexDirection:"column",alignItems:"center",gap:1,
+            pointerEvents:"none", backdropFilter:"blur(8px)",
+            boxShadow:cap.active?"0 0 12px rgba(139,92,246,.4)":"none",
+            minWidth:52,
+          }}>
+            <span style={{fontSize:9,color:"rgba(196,181,253,.5)"}}>🌙</span>
+            <span style={{fontSize:10,fontWeight:700,color:cap.active?"#c4b5fd":"rgba(196,181,253,.7)",whiteSpace:"nowrap"}}>{cap.label}</span>
+            <span style={{fontSize:9,color:"rgba(148,130,220,.6)",whiteSpace:"nowrap"}}>{cap.sublabel}</span>
+          </div>
+        ))}
+        {/* Sunrise & sunset emoji labels (real local times) */}
+        {(()=>{const sunA=m2a(sunriseMin);const {x,y}=polar(sunA,R);return<div style={{position:"absolute",left:x,top:y,transform:"translate(-50%,-50%)",fontSize:14,lineHeight:1,pointerEvents:"none"}}>☀️</div>;})()}
+        {(()=>{const moonA=m2a(sunsetMin);const {x,y}=polar(moonA,R);return<div style={{position:"absolute",left:x,top:y,transform:"translate(-50%,-50%)",fontSize:14,lineHeight:1,pointerEvents:"none"}}>🌇</div>;})()}
+        {/* Now dot label */}
+        {(()=>{const a=m2a(minutesInDay(now));const {x,y}=polar(a,R+20);return<div style={{position:"absolute",left:x,top:y,transform:"translate(-50%,-50%)",fontSize:9,color:"rgba(255,255,255,.5)",whiteSpace:"nowrap",pointerEvents:"none"}}>{fmtTime(now)}</div>;})()}
+        {/* Centre */}
+        <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"0 40px"}}>
+          {activeSleep?(
+            <>
+              <div style={{fontSize:11,color:"rgba(196,181,253,.6)",fontWeight:600,letterSpacing:".08em",textTransform:"uppercase"}}>{lang==="he"?"ישן עכשיו":"Sleeping now"}</div>
+              <div style={{fontSize:42,fontWeight:900,color:"#fff",lineHeight:1,fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em"}}>{fmtDurEn(activeDur)}</div>
+              <button onClick={onToggle} style={{marginTop:10,padding:"8px 22px",background:"linear-gradient(135deg,#7c3aed,#6366f1)",border:"none",borderRadius:20,color:"#fff",fontSize:12,fontWeight:800,boxShadow:"0 0 24px rgba(99,102,241,.6)",letterSpacing:".02em"}}>
+                {S.sleep.endSleep}
+              </button>
+            </>
+          ):(
+            <>
+              {nextPred&&nextPred.predictions?.length?(
+                <>
+                  <div style={{fontSize:11,color:"rgba(196,181,253,.55)",fontWeight:500,textAlign:"center",lineHeight:1.3}}>{lang==="he"?"שינה הבאה בעוד":"Next nap in"}</div>
+                  <div style={{fontSize:46,fontWeight:900,color:"#fff",lineHeight:1,letterSpacing:"-.03em"}}>
+                    {nextPred.predictions[0].minsFromNow<60
+                      ?nextPred.predictions[0].minsFromNow+(lang==="he"?"ד׳":" min")
+                      :(Math.round(nextPred.predictions[0].minsFromNow/6)/10)+(lang==="he"?"ש׳":" hr")}
+                  </div>
+                  <button onClick={onToggle} style={{marginTop:8,padding:"7px 20px",background:"rgba(99,102,241,.18)",border:"1px solid rgba(139,92,246,.4)",borderRadius:20,color:"#c4b5fd",fontSize:11,fontWeight:700}}>
+                    {lang==="he"?"ישן עכשיו":"Sleep now"}
+                  </button>
+                </>
+              ):(
+                <>
+                  <div style={{fontSize:12,color:"rgba(196,181,253,.45)",textAlign:"center",lineHeight:1.6,padding:"0 10px"}}>{lang==="he"?"לחץ להתחיל מעקב שינה":"Tap to start tracking sleep"}</div>
+                  <button onClick={onToggle} style={{marginTop:10,padding:"9px 24px",background:"linear-gradient(135deg,#7c3aed,#6366f1)",border:"none",borderRadius:20,color:"#fff",fontSize:13,fontWeight:800,boxShadow:"0 0 24px rgba(99,102,241,.5)"}}>
+                    {S.sleep.startSleep}
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── SLEEP TAB ───────────────────────────────────────────────────────────────
+  function SleepTab({T,S,lang,sunTimes}){
+    const[sleeps,setSleeps]=useState(()=>loadLS("ww_sleeps",[]));
+    const[now,setNow]=useState(Date.now());
+    useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(t);},[]);
+    useEffect(()=>saveLS("ww_sleeps",sleeps),[sleeps]);
+
+    const activeSleep=sleeps.find(s=>!s.end);
+    const todayStart=startOfDay(Date.now());
+    const todaySleeps=sleeps.filter(s=>s.start>=todayStart);
+    const totalTodayMs=todaySleeps.reduce((acc,s)=>{const dur=s.end?s.end-s.start:now-s.start;return acc+dur;},0);
+    const nowMin=minutesInDay(now);
+    const yesterday=sleeps.filter(s=>s.start>=todayStart-86400000&&s.start<todayStart);
+
+    const nextSleepPred=useMemo(()=>{
+      if(activeSleep)return null;
+      const future=yesterday.filter(s=>s.end&&minutesInDay(s.start)>nowMin).sort((a,b)=>minutesInDay(a.start)-minutesInDay(b.start));
+      if(!future.length)return null;
+      const predictions=future.slice(0,3).map(s=>({
+        startMin:minutesInDay(s.start),
+        minsFromNow:minutesInDay(s.start)-nowMin,
+        durMs:s.end-s.start,
+      }));
+      return{predictions};
+    },[sleeps,now]);
+
+    const avgDurMs=useMemo(()=>{
+      const finished=sleeps.filter(s=>s.end).slice(-14);
+      if(!finished.length)return null;
+      return finished.reduce((a,s)=>a+(s.end-s.start),0)/finished.length;
+    },[sleeps]);
+
+    const toggleSleep=()=>{
+      haptic(activeSleep?12:15);
+      if(activeSleep)setSleeps(prev=>prev.map(s=>s.id===activeSleep.id?{...s,end:Date.now()}:s));
+      else setSleeps(prev=>[...prev,{id:Date.now(),start:Date.now(),end:null}]);
+    };
+    const deleteSleep=id=>setSleeps(prev=>prev.filter(s=>s.id!==id));
+    const recentSleeps=[...sleeps].filter(s=>s.start>=todayStart-7*86400000).sort((a,b)=>b.start-a.start).slice(0,15);
+
+    // ── Edit sheet state ──
+    const[editSheetOpen,setEditSheetOpen]=useState(false);
+    const[editId,setEditId]=useState(null);
+    const[editStartDate,setEditStartDate]=useState("");
+    const[editStartTime,setEditStartTime]=useState("");
+    const[editEndDate,setEditEndDate]=useState("");
+    const[editEndTime,setEditEndTime]=useState("");
+    const[hasEnd,setHasEnd]=useState(true);
+    const todayDateStr=tsToDateStr(now);
+
+    const openEditSleep=s=>{
+      haptic(8);
+      setEditId(s.id);
+      setEditStartDate(tsToDateStr(s.start)); setEditStartTime(tsToTimeStr(s.start));
+      if(s.end){setHasEnd(true); setEditEndDate(tsToDateStr(s.end)); setEditEndTime(tsToTimeStr(s.end));}
+      else{setHasEnd(false); setEditEndDate(tsToDateStr(now)); setEditEndTime(tsToTimeStr(now));}
+      setEditSheetOpen(true);
+    };
+    const saveEditSleep=()=>{
+      haptic(12);
+      const startTs=dateTimeToTs(editStartDate,editStartTime);
+      const endTs=hasEnd?dateTimeToTs(editEndDate,editEndTime):null;
+      setSleeps(prev=>prev.map(s=>s.id===editId?{...s,start:startTs,end:(hasEnd&&endTs>startTs)?endTs:(hasEnd?s.end:null)}:s));
+      setEditSheetOpen(false);
+    };
+    const deleteFromEditSheet=()=>{haptic(15);setSleeps(prev=>prev.filter(s=>s.id!==editId));setEditSheetOpen(false);};
+
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:14,padding:"0 0 16px"}}>
+        {/* Circular timeline hero */}
+        <div style={{background:"linear-gradient(135deg,#0d0f2b,#151832)",borderRadius:24,padding:"20px 0 16px",border:"1px solid rgba(99,102,241,.2)",boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}>
+          <CircularTimeline sleeps={sleeps} activeSleep={activeSleep} nextPred={nextSleepPred} now={now} onToggle={toggleSleep} S={S} lang={lang} sunTimes={sunTimes}/>
+          {/* Sunrise/sunset markers (real local times if available) */}
+          <div style={{display:"flex",justifyContent:"center",gap:32,marginTop:12}}>
+            <div style={{textAlign:"center"}}><div style={{fontSize:20}}>🌅</div><div style={{fontSize:11,color:"rgba(251,146,60,.8)",fontWeight:700,marginTop:2}}>{sunTimes?fmtTime(startOfDay(Date.now())+sunTimes.sunriseMin*60000):"06:00"}</div></div>
+            <div style={{textAlign:"center"}}><div style={{fontSize:20}}>🌇</div><div style={{fontSize:11,color:"rgba(251,146,60,.8)",fontWeight:700,marginTop:2}}>{sunTimes?fmtTime(startOfDay(Date.now())+sunTimes.sunsetMin*60000):"20:00"}</div></div>
+          </div>
+          {/* Naïve prediction note */}
+          <div style={{textAlign:"center",fontSize:10,color:"rgba(165,180,252,.35)",marginTop:8,padding:"0 20px"}}>{S.sleep.naiveNote}</div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <StatCard icon="🌙" label={S.sleep.totalToday} value={totalTodayMs>0?fmtDur(totalTodayMs):"—"} sub={avgDurMs?`${S.sleep.avgDuration}: ${fmtDur(avgDurMs)}`:""} T={T}/>
+          <StatCard icon="📊" label={S.sleep.nextSleep} value={nextSleepPred?.predictions?.[0]?(nextSleepPred.predictions[0].minsFromNow<60?nextSleepPred.predictions[0].minsFromNow+(lang==="he"?"ד׳":"m"):Math.round(nextSleepPred.predictions[0].minsFromNow/60)+(lang==="he"?"ש׳":"h")):"—"} sub={nextSleepPred?.predictions?.[0]?("~"+fmtDur(nextSleepPred.predictions[0].durMs)):S.sleep.naiveNote} T={T}/>
+        </div>
+
+        {/* 7-day pattern */}
+        <PatternGrid events={sleeps} color={T.sleepColor} bgColor={T.sleepBg} T={T} S={S} type="sleep"/>
+
+        {/* History */}
+        <div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:recentSleeps.length?10:0}}>
+            <div style={{fontSize:12,fontWeight:700,color:T.sub}}>{S.sleep.history}</div>
+            {recentSleeps.length>0&&<div style={{fontSize:10,color:T.muted}}>{lang==="he"?"לחץ לעריכה":"Tap to edit"}</div>}
+          </div>
+          {recentSleeps.length===0
+            ?<EmptyState Icon={IconMoonZzz} accent={T.sleepColor} T={T} text={S.sleep.noSleeps}/>
+            :<div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {recentSleeps.map(s=>(
+                  <SwipeableRow key={s.id} T={T} onDelete={()=>deleteSleep(s.id)} onTap={()=>openEditSleep(s)}>
+                    <SleepRow s={s} now={now} T={T} S={S} lang={lang}/>
+                  </SwipeableRow>
+                ))}
+              </div>}
+        </div>
+
+        {/* Edit sleep bottom sheet */}
+        <BottomSheet open={editSheetOpen} onClose={()=>setEditSheetOpen(false)} T={T}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:16,textAlign:"center"}}>{lang==="he"?"עריכת שינה":"Edit Sleep"}</div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>🕐 {lang==="he"?"התחלה":"Start"}</div>
+            <DateTimeField dateStr={editStartDate} timeStr={editStartTime} onDateChange={setEditStartDate} onTimeChange={setEditStartTime} T={T} lang={lang} maxDate={todayDateStr}/>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.sub}}>🕐 {lang==="he"?"סיום":"End"}</div>
+              <button onClick={()=>{haptic(6);setHasEnd(h=>!h);}} style={{fontSize:11,fontWeight:700,color:hasEnd?T.sub:T.accentText,background:"none",padding:"2px 4px"}}>
+                {hasEnd?(lang==="he"?"עדיין ישן?":"Still sleeping?"):"✓ "+(lang==="he"?"עדיין ישן":"Still sleeping")}
+              </button>
+            </div>
+            {hasEnd&&<DateTimeField dateStr={editEndDate} timeStr={editEndTime} onDateChange={setEditEndDate} onTimeChange={setEditEndTime} T={T} lang={lang} maxDate={todayDateStr}/>}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={deleteFromEditSheet} style={{padding:"0 18px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <IconTrash size={17} color="#ef4444"/>
+            </button>
+            <button onClick={saveEditSleep} style={{flex:1,padding:14,background:"linear-gradient(135deg,#7c3aed,#6366f1)",border:"none",borderRadius:14,color:"#fff",fontSize:15,fontWeight:800,boxShadow:"0 4px 20px rgba(99,102,241,.4)"}}>{lang==="he"?"שמור":"Save"}</button>
+          </div>
+        </BottomSheet>
+      </div>
+    );
+  }
+
+  function SleepRow({s,now,T,S,lang}){
+    const dur=s.end?s.end-s.start:now-s.start;
+    const isActive=!s.end;
+    const arrow=lang==="he"?"←":"→";
+    return<div style={{display:"flex",alignItems:"center",gap:11,padding:"9px 10px"}}>
+      <div style={{width:32,height:32,borderRadius:11,background:isActive?"rgba(99,102,241,.18)":"rgba(128,128,128,.12)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        <IconMoonZzz size={15} color={isActive?"#818cf8":T.sub}/>
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13.5,fontWeight:700,color:T.text}}>
+          <span>{fmtTime(s.start)}</span>
+          {s.end?<>
+            <span style={{color:T.muted,fontSize:12,fontWeight:400}}>{arrow}</span>
+            <span>{fmtTime(s.end)}</span>
+          </>:<span style={{color:"#818cf8",fontWeight:600,fontSize:12}}>{lang==="he"?"ישן עכשיו":"sleeping now"}</span>}
+          <span style={{fontSize:11,color:T.sub,fontWeight:500,marginInlineStart:"auto"}}>{fmtDur(dur)}</span>
+        </div>
+        <div style={{fontSize:11,color:T.sub,marginTop:1}}>{new Date(s.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</div>
+      </div>
+    </div>;
+  }
+
+  // ─── FEED TAB ────────────────────────────────────────────────────────────────
+  function FeedTab({T,S,lang}){
+    const[feeds,setFeeds]=useState(()=>loadLS("ww_feeds",[]));
+    const[weights]=useState(()=>loadLS("ww_weights",[]));
+    const[sheetOpen,setSheetOpen]=useState(false);
+    const[editingId,setEditingId]=useState(null); // null = adding new
+    const[feedType,setFeedType]=useState("breast");
+    const[feedAmt,setFeedAmt]=useState("");
+    const[feedPrepared,setFeedPrepared]=useState("");
+    const[feedNote,setFeedNote]=useState("");
+    const[feedDate,setFeedDate]=useState(()=>tsToDateStr(Date.now()));
+    const[feedTimeOnly,setFeedTimeOnly]=useState(()=>tsToTimeStr(Date.now()));
+
+    useEffect(()=>saveLS("ww_feeds",feeds),[feeds]);
+
+    const todayStart=startOfDay(Date.now());
+    const todayFeeds=feeds.filter(f=>f.start>=todayStart);
+    const recentFeeds=[...feeds].sort((a,b)=>b.start-a.start).slice(0,20);
+    const lastFeed=recentFeeds[0];
+
+    // Avg interval prediction
+    const avgIntervalMs=useMemo(()=>{
+      const sorted=[...feeds].sort((a,b)=>a.start-b.start);
+      if(sorted.length<2)return null;
+      const intervals=[];
+      for(let i=1;i<Math.min(sorted.length,10);i++)intervals.push(sorted[i].start-sorted[i-1].start);
+      return intervals.reduce((a,b)=>a+b,0)/intervals.length;
+    },[feeds]);
+
+    const nextFeedIn=lastFeed&&avgIntervalMs?Math.max(0,Math.round((lastFeed.start+avgIntervalMs-Date.now())/60000)):null;
+
+    // Bottle consumption vs recommended daily target: min(150ml * weightKg, 960ml)
+    const latestWeightKg=useMemo(()=>{
+      if(!weights.length)return null;
+      return[...weights].sort((a,b)=>b.date-a.date)[0].kg;
+    },[weights]);
+    const bottleTodayMl=useMemo(()=>todayFeeds.filter(f=>f.type==="bottle"&&f.amount).reduce((a,f)=>a+f.amount,0),[todayFeeds]);
+    const recommendedMl=latestWeightKg?Math.min(150*latestWeightKg,960):null;
+
+    const openAddSheet=()=>{
+      haptic(10);
+      setEditingId(null); setFeedType("breast"); setFeedAmt(""); setFeedPrepared(""); setFeedNote("");
+      setFeedDate(tsToDateStr(Date.now())); setFeedTimeOnly(tsToTimeStr(Date.now()));
+      setSheetOpen(true);
+    };
+    const openEditSheet=f=>{
+      haptic(8);
+      setEditingId(f.id); setFeedType(f.type); setFeedAmt(f.amount?String(f.amount):""); setFeedPrepared(f.prepared?String(f.prepared):""); setFeedNote(f.note||"");
+      setFeedDate(tsToDateStr(f.start)); setFeedTimeOnly(tsToTimeStr(f.start));
+      setSheetOpen(true);
+    };
+    const saveFeed=()=>{
+      haptic(15);
+      const ts=dateTimeToTs(feedDate,feedTimeOnly);
+      const amt=feedAmt?parseInt(feedAmt):null;
+      const prep=feedPrepared?parseInt(feedPrepared):null;
+      const note=feedNote.trim()?feedNote.trim():null;
+      if(editingId)setFeeds(prev=>prev.map(f=>f.id===editingId?{...f,type:feedType,amount:amt,prepared:prep,note,start:ts}:f));
+      else setFeeds(prev=>[...prev,{id:Date.now(),start:ts,type:feedType,amount:amt,prepared:prep,note}]);
+      setSheetOpen(false);
+    };
+    const deleteFeed=id=>setFeeds(prev=>prev.filter(f=>f.id!==id));
+    const deleteFromSheet=()=>{haptic(15);setFeeds(prev=>prev.filter(f=>f.id!==editingId));setSheetOpen(false);};
+
+    const typeEmoji={breast:"🤱",bottle:"🍼",solid:"🥣"};
+    const todayDateStr=tsToDateStr(Date.now());
+
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:12,padding:"0 0 16px"}}>
+        {/* FAB-style log button */}
+        <button onClick={openAddSheet} style={{width:"100%",padding:16,background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:18,color:"#fff",fontSize:16,fontWeight:800,boxShadow:"0 6px 24px rgba(249,115,22,.45)",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <IconPlus size={20}/>{S.feed.logFeed}
+        </button>
+
+        {/* Stats */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <StatCard icon="⏭️" label={S.feed.nextFeed} value={nextFeedIn!==null?(nextFeedIn<60?nextFeedIn+"ד׳":Math.round(nextFeedIn/60)+"ש׳"):"—"} sub={lastFeed?`${lang==="he"?"אחרון":"Last"}: ${fmtTime(lastFeed.start)}`:"—"} T={T}/>
+          <StatCard icon="📊" label={S.feed.totalToday} value={todayFeeds.length.toString()} sub={avgIntervalMs?`${S.feed.avgInterval}: ${fmtDur(avgIntervalMs)}`:"—"} T={T}/>
+        </div>
+
+        {/* Bottle consumption today (target shown only if weight is known) */}
+        <div style={{background:T.surface,borderRadius:14,padding:"13px 16px",border:`1px solid ${T.surfaceB}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:recommendedMl?8:0}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.sub}}>🍼 {S.feed.bottleToday}</div>
+            <div style={{fontSize:13,fontWeight:800,color:T.text}}>{bottleTodayMl}{recommendedMl?` / ${Math.round(recommendedMl)}`:""} {lang==="he"?"מ״ל":"ml"}</div>
+          </div>
+          {recommendedMl?(
+            <div style={{background:"rgba(128,128,128,.15)",borderRadius:20,height:7,overflow:"hidden"}}>
+              <div style={{width:`${Math.min(100,(bottleTodayMl/recommendedMl)*100)}%`,height:"100%",borderRadius:20,background:bottleTodayMl>=recommendedMl?"linear-gradient(90deg,#22c55e,#16a34a)":"linear-gradient(90deg,#fb923c,#f97316)",transition:"width .4s"}}/>
+            </div>
+          ):(
+            <div style={{fontSize:11,color:T.muted,lineHeight:1.5,marginTop:4}}>{S.feed.addWeightHint}</div>
+          )}
+        </div>
+
+        {/* Pattern grid */}
+        <PatternGrid events={feeds} color={T.feedColor} bgColor={T.feedBg} T={T} S={S} type="feed"/>
+
+        {/* History */}
+        <div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:recentFeeds.length?10:0}}>
+            <div style={{fontSize:12,fontWeight:700,color:T.sub}}>{S.feed.history}</div>
+            {recentFeeds.length>0&&<div style={{fontSize:10,color:T.muted}}>{lang==="he"?"לחץ לעריכה":"Tap to edit"}</div>}
+          </div>
+          {recentFeeds.length===0
+            ?<EmptyState Icon={IconBottle} accent={T.feedColor} T={T} text={S.feed.noFeeds}/>
+            :<div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {recentFeeds.map(f=>(
+                  <SwipeableRow key={f.id} T={T} onDelete={()=>deleteFeed(f.id)} onTap={()=>openEditSheet(f)}>
+                    <FeedRow f={f} T={T} S={S} typeEmoji={typeEmoji} lang={lang}/>
+                  </SwipeableRow>
+                ))}
+              </div>}
+        </div>
+
+        {/* Add / edit feed bottom sheet */}
+        <BottomSheet open={sheetOpen} onClose={()=>setSheetOpen(false)} T={T}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:16,textAlign:"center"}}>
+            {editingId?(lang==="he"?"עריכת ארוחה":"Edit Feed"):S.feed.logFeed}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            {Object.entries(S.feed.types).map(([k,v])=>(
+              <button key={k} onClick={()=>{haptic(8);setFeedType(k);}} style={{flex:1,padding:"12px 0",background:feedType===k?"linear-gradient(135deg,#f97316,#ea580c)":T.surface2,border:`1px solid ${feedType===k?"#f97316":T.surface2B}`,borderRadius:13,color:feedType===k?"#fff":T.text,fontSize:13,fontWeight:700}}>
+                <div style={{fontSize:20,marginBottom:2}}>{typeEmoji[k]}</div>{v}
+              </button>
+            ))}
+          </div>
+          {feedType==="bottle"&&(
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>{S.feed.prepared}</div>
+                <input type="number" inputMode="numeric" placeholder="0" value={feedPrepared} onChange={e=>setFeedPrepared(e.target.value)}
+                  style={{width:"100%",padding:"11px 10px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:16,fontWeight:700,outline:"none",textAlign:"center"}}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.sub}}>{S.feed.consumed}</div>
+                  {feedPrepared&&<button onClick={()=>{haptic(6);setFeedAmt(feedPrepared);}} style={{fontSize:9.5,fontWeight:700,color:T.feedColor,background:"none",padding:"0 2px"}}>{S.feed.finishedAll}</button>}
+                </div>
+                <input type="number" inputMode="numeric" placeholder="0" value={feedAmt} onChange={e=>setFeedAmt(e.target.value)}
+                  style={{width:"100%",padding:"11px 10px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:16,fontWeight:700,outline:"none",textAlign:"center"}}/>
+              </div>
+            </div>
+          )}
+          {feedType==="solid"&&(
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>{lang==="he"?"הערה (אופציונלי)":"Note (optional)"}</div>
+              <input type="text" placeholder={lang==="he"?"למשל: אבוקדו, פעם ראשונה!":"e.g. avocado, first time!"} value={feedNote} onChange={e=>setFeedNote(e.target.value)}
+                style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:14,outline:"none"}}/>
+            </div>
+          )}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>🕐 {lang==="he"?"שעה":"Time"}</div>
+            <DateTimeField dateStr={feedDate} timeStr={feedTimeOnly} onDateChange={setFeedDate} onTimeChange={setFeedTimeOnly} T={T} lang={lang} maxDate={todayDateStr}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            {editingId&&<button onClick={deleteFromSheet} style={{padding:"0 18px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <IconTrash size={17} color="#ef4444"/>
+            </button>}
+            <button onClick={saveFeed} style={{flex:1,padding:14,background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:14,color:"#fff",fontSize:15,fontWeight:800,boxShadow:"0 4px 20px rgba(249,115,22,.4)"}}>{S.feed.save}</button>
+          </div>
+        </BottomSheet>
+      </div>
+    );
+  }
+
+  function FeedRow({f,T,S,typeEmoji,lang}){
+    const hasBoth=f.prepared&&f.amount&&f.prepared!==f.amount;
+    const singleMl=f.amount??f.prepared;
+    const finished=f.prepared&&f.amount&&f.amount>=f.prepared;
+    return<div style={{display:"flex",alignItems:"center",gap:11,padding:"9px 10px"}}>
+      <div style={{width:32,height:32,borderRadius:11,background:"rgba(249,115,22,.14)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:15}}>
+        {typeEmoji[f.type]||"🍼"}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13.5,fontWeight:700,color:T.text,flexWrap:"wrap"}}>
+          <span>{fmtTime(f.start)}</span>
+          <span style={{color:T.sub,fontWeight:500,fontSize:12}}>· {S.feed.types[f.type]}</span>
+          {singleMl?<span style={{fontSize:12,color:T.sub,fontWeight:600}}>{hasBoth?`${f.amount}/${f.prepared}ml`:`${singleMl}ml`}</span>:null}
+          {finished&&<span style={{color:T.feedColor,fontWeight:800}}>✓</span>}
+        </div>
+        <div style={{fontSize:11,color:T.sub,marginTop:1}}>{new Date(f.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</div>
+        {f.note&&<div style={{fontSize:11.5,color:T.muted,marginTop:3,fontStyle:"italic",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>"{f.note}"</div>}
+      </div>
+    </div>;
+  }
+
+  function StatCard({icon,label,value,sub,T}){
+    return<div style={{background:T.surface,borderRadius:14,padding:"14px 14px",border:`1px solid ${T.surfaceB}`}}>
+      <div style={{fontSize:10,color:T.sub,fontWeight:600,marginBottom:4}}>{icon} {label}</div>
+      <div style={{fontSize:22,fontWeight:900,color:T.text,lineHeight:1,marginBottom:3}}>{value}</div>
+      {sub&&<div style={{fontSize:10,color:T.muted,lineHeight:1.4}}>{sub}</div>}
+    </div>;
+  }
+
+  // ─── WEIGHT SECTION (baby weight tracking for feed-target calculations) ────
+  function WeightSection({T,S,lang}){
+    const[weights,setWeights]=useState(()=>loadLS("ww_weights",[]));
+    const[sheetOpen,setSheetOpen]=useState(false);
+    const[editingId,setEditingId]=useState(null);
+    const[wKg,setWKg]=useState("");
+    const[wDate,setWDate]=useState(()=>tsToDateStr(Date.now()));
+
+    useEffect(()=>saveLS("ww_weights",weights),[weights]);
+
+    const sorted=useMemo(()=>[...weights].sort((a,b)=>b.date-a.date),[weights]);
+    const latest=sorted[0];
+    const todayStr=tsToDateStr(Date.now());
+
+    const openAdd=()=>{haptic(10);setEditingId(null);setWKg("");setWDate(todayStr);setSheetOpen(true);};
+    const openEdit=w=>{haptic(8);setEditingId(w.id);setWKg(String(w.kg));setWDate(tsToDateStr(w.date));setSheetOpen(true);};
+    const save=()=>{
+      if(!wKg)return;
+      haptic(15);
+      const kg=parseFloat(wKg);
+      const ts=new Date(wDate+"T12:00").getTime();
+      if(editingId)setWeights(prev=>prev.map(w=>w.id===editingId?{...w,kg,date:ts}:w));
+      else setWeights(prev=>[...prev,{id:Date.now(),kg,date:ts}]);
+      setSheetOpen(false);
+    };
+    const del=id=>setWeights(prev=>prev.filter(w=>w.id!==id));
+    const delFromSheet=()=>{haptic(15);setWeights(prev=>prev.filter(w=>w.id!==editingId));setSheetOpen(false);};
+
+    return(
+      <div style={{background:T.surface,borderRadius:16,padding:16,border:`1px solid ${T.surfaceB}`,display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.sub,display:"flex",alignItems:"center",gap:6}}><IconScale size={14} color={T.sub}/>{S.settings.weight}</div>
+          <button onClick={openAdd} style={{padding:"6px 12px",background:T.accentBg,border:`1px solid ${T.accentB}`,borderRadius:10,color:T.accentText,fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
+            <IconPlus size={13} color={T.accentText}/>{S.settings.updateWeight}
+          </button>
+        </div>
+        {latest?(
+          <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+            <div style={{fontSize:28,fontWeight:900,color:T.text}}>{latest.kg}<span style={{fontSize:14,fontWeight:600,color:T.sub}}> kg</span></div>
+            <div style={{fontSize:11,color:T.muted}}>{S.settings.recordedOn} {new Date(latest.date).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</div>
+          </div>
+        ):(
+          <div style={{fontSize:12,color:T.muted}}>{S.settings.noWeight}</div>
+        )}
+        {sorted.length>1&&(
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {sorted.slice(1,5).map(w=>(
+              <SwipeableRow key={w.id} T={T} onDelete={()=>del(w.id)} onTap={()=>openEdit(w)}>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"7px 10px"}}>
+                  <span style={{fontSize:12,color:T.text,fontWeight:600}}>{w.kg} kg</span>
+                  <span style={{fontSize:11,color:T.sub}}>{new Date(w.date).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</span>
+                </div>
+              </SwipeableRow>
+            ))}
+          </div>
+        )}
+        <BottomSheet open={sheetOpen} onClose={()=>setSheetOpen(false)} T={T}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:16,textAlign:"center"}}>{editingId?(lang==="he"?"עריכת משקל":"Edit Weight"):S.settings.updateWeight}</div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>⚖️ {S.settings.weightKg}</div>
+            <input type="number" step="0.1" inputMode="decimal" placeholder="0.0" value={wKg} onChange={e=>setWKg(e.target.value)}
+              style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:18,fontWeight:700,outline:"none",textAlign:"center"}}/>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>📅 {lang==="he"?"תאריך":"Date"}</div>
+            <input type="date" value={wDate} max={todayStr} onChange={e=>setWDate(e.target.value)}
+              style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:15,outline:"none",colorScheme:T.ds}}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            {editingId&&<button onClick={delFromSheet} style={{padding:"0 18px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <IconTrash size={17} color="#ef4444"/>
+            </button>}
+            <button onClick={save} disabled={!wKg} style={{flex:1,padding:14,background:wKg?"linear-gradient(135deg,#6366f1,#8b5cf6)":"rgba(128,128,128,.2)",border:"none",borderRadius:14,color:wKg?"#fff":T.sub,fontSize:15,fontWeight:800,boxShadow:wKg?"0 4px 20px rgba(99,102,241,.4)":"none"}}>{S.feed.save}</button>
+          </div>
+        </BottomSheet>
+      </div>
+    );
+  }
+
+  // ─── CSV EXPORT ──────────────────────────────────────────────────────────────
+  function csvEsc(v){
+    if(v===null||v===undefined)return"";
+    const s=String(v);
+    return/[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+  }
+  function buildCSV(sleeps,feeds,weights,lang){
+    const lines=[];
+    lines.push(lang==="he"?"נתוני שינה":"Sleep Entries");
+    lines.push(["Start","End","Duration (min)"].map(csvEsc).join(","));
+    [...sleeps].sort((a,b)=>a.start-b.start).forEach(s=>{
+      const durMin=s.end?Math.round((s.end-s.start)/60000):"";
+      lines.push([new Date(s.start).toISOString(),s.end?new Date(s.end).toISOString():"",durMin].map(csvEsc).join(","));
+    });
+    lines.push("");
+    lines.push(lang==="he"?"נתוני האכלה":"Feed Entries");
+    lines.push(["DateTime","Type","Prepared (ml)","Consumed (ml)","Note"].map(csvEsc).join(","));
+    [...feeds].sort((a,b)=>a.start-b.start).forEach(f=>{
+      lines.push([new Date(f.start).toISOString(),f.type,f.prepared??"",f.amount??"",f.note??""].map(csvEsc).join(","));
+    });
+    lines.push("");
+    lines.push(lang==="he"?"נתוני משקל":"Weight Entries");
+    lines.push(["Date","Weight (kg)"].map(csvEsc).join(","));
+    [...weights].sort((a,b)=>a.date-b.date).forEach(w=>{
+      lines.push([new Date(w.date).toISOString(),w.kg].map(csvEsc).join(","));
+    });
+    return"\uFEFF"+lines.join("\n");
+  }
+  function downloadFile(content,filename,mime){
+    const blob=new Blob([content],{type:mime});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function sanitizeFilePart(s){
+    return(s||"").trim().replace(/[^a-zA-Z0-9\u0590-\u05FF_-]+/g,"-").replace(/^-+|-+$/g,"")||"";
+  }
+
+  // ─── BACKUP CODE ENCODE/DECODE (UTF-8 safe base64) ──────────────────────────
+  function encodeBackup(state){
+    const json=JSON.stringify(state);
+    return btoa(unescape(encodeURIComponent(json)));
+  }
+  function decodeBackup(code){
+    const json=decodeURIComponent(escape(atob(code.trim())));
+    return JSON.parse(json);
+  }
+
+  // ─── EXPORT SECTION ──────────────────────────────────────────────────────────
+  function ExportSection({T,S,lang,babyName,birthDate}){
+    const doExport=()=>{
+      haptic(10);
+      const sleeps=loadLS("ww_sleeps",[]);
+      const feeds=loadLS("ww_feeds",[]);
+      const weights=loadLS("ww_weights",[]);
+      const csv=buildCSV(sleeps,feeds,weights,lang);
+      const namePart=sanitizeFilePart(babyName)||"baby";
+      const dobPart=birthDate||"unknown-dob";
+      const todayPart=tsToDateStr(Date.now());
+      const filename=`wonder-weeks-${namePart}-dob-${dobPart}-export-${todayPart}.csv`;
+      downloadFile(csv,filename,"text/csv;charset=utf-8;");
+    };
+    return(
+      <button onClick={doExport} style={{padding:14,background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:14,color:T.text,fontSize:13.5,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+        {lang==="he"?"ייצוא נתונים ל-CSV":"Export Data to CSV"}
+      </button>
+    );
+  }
+
+  // ─── BACKUP & RESTORE SECTION ────────────────────────────────────────────────
+  function BackupSection({T,S,lang,babyName,birthDate}){
+    const[copied,setCopied]=useState(false);
+    const[codeSheetOpen,setCodeSheetOpen]=useState(false);
+    const[backupCode,setBackupCode]=useState("");
+    const[restoreOpen,setRestoreOpen]=useState(false);
+    const[restoreCode,setRestoreCode]=useState("");
+    const[restoreError,setRestoreError]=useState(false);
+    const codeRef=useRef(null);
+
+    const doBackup=()=>{
+      haptic(10);
+      const state={
+        v:1,
+        babyName, birthDate,
+        sleeps:loadLS("ww_sleeps",[]),
+        feeds:loadLS("ww_feeds",[]),
+        weights:loadLS("ww_weights",[]),
+      };
+      setBackupCode(encodeBackup(state));
+      setCopied(false);
+      setCodeSheetOpen(true);
+    };
+
+    const copyCode=async()=>{
+      haptic(8);
+      let ok=false;
+      try{ await navigator.clipboard.writeText(backupCode); ok=true; }
+      catch{
+        try{
+          if(codeRef.current){
+            codeRef.current.focus();
+            codeRef.current.select();
+            ok=document.execCommand("copy");
+          }
+        }catch{}
+      }
+      if(ok){setCopied(true);setTimeout(()=>setCopied(false),2500);}
+    };
+
+    const openRestore=()=>{haptic(8);setRestoreCode("");setRestoreError(false);setRestoreOpen(true);};
+
+    const doRestore=()=>{
+      try{
+        const state=decodeBackup(restoreCode);
+        if(!state||typeof state!=="object")throw new Error("invalid");
+        if(state.birthDate)localStorage.setItem("ww_date",state.birthDate);
+        if(state.babyName!==undefined)localStorage.setItem("ww_babyname",state.babyName);
+        saveLS("ww_sleeps",state.sleeps||[]);
+        saveLS("ww_feeds",state.feeds||[]);
+        saveLS("ww_weights",state.weights||[]);
+        haptic(15);
+        window.location.reload();
+      }catch(e){
+        haptic(20);
+        setRestoreError(true);
+      }
+    };
+
+    return(
+      <div style={{background:T.surface,borderRadius:16,padding:16,border:`1px solid ${T.surfaceB}`,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:T.sub}}>💾 {lang==="he"?"גיבוי ושחזור":"Backup & Restore"}</div>
+        <div style={{fontSize:11,color:T.muted,lineHeight:1.5}}>
+          {lang==="he"?"צרו קוד גיבוי ושמרו אותו במקום בטוח. הקוד מכיל את כל נתוני השינה, ההאכלה והמשקל, ומאפשר שחזור מלא גם לאחר איפוס.":"Create a backup code and keep it safe. It contains all sleep, feed, and weight data, and lets you fully restore even after a reset."}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={doBackup} style={{flex:1,padding:12,background:T.accentBg,border:`1px solid ${T.accentB}`,borderRadius:12,color:T.accentText,fontSize:12.5,fontWeight:700}}>
+            📋 {lang==="he"?"הצג קוד גיבוי":"Show Backup Code"}
+          </button>
+          <button onClick={openRestore} style={{flex:1,padding:12,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:12,color:T.text,fontSize:12.5,fontWeight:700}}>
+            ♻️ {lang==="he"?"שחזר מקוד":"Restore from Code"}
+          </button>
+        </div>
+
+        {/* Show backup code sheet — always visible so manual copy always works as a fallback */}
+        <BottomSheet open={codeSheetOpen} onClose={()=>setCodeSheetOpen(false)} T={T}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:10,textAlign:"center"}}>{lang==="he"?"קוד הגיבוי שלך":"Your Backup Code"}</div>
+          <div style={{fontSize:11,color:T.muted,marginBottom:10,lineHeight:1.5}}>
+            {lang==="he"?"לחצו על 'העתק'. אם זה לא עובד, בחרו את הטקסט למטה ידנית והעתיקו אותו בעצמכם.":"Tap Copy. If that doesn't work, manually select the text below and copy it yourself."}
+          </div>
+          <textarea ref={codeRef} readOnly value={backupCode} onFocus={e=>e.target.select()}
+            style={{width:"100%",minHeight:130,padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:11.5,outline:"none",resize:"vertical",fontFamily:"monospace",direction:"ltr",marginBottom:14}}/>
+          <button onClick={copyCode} style={{width:"100%",padding:14,background:copied?"rgba(34,197,94,.18)":"linear-gradient(135deg,#6366f1,#8b5cf6)",border:copied?"1px solid rgba(34,197,94,.4)":"none",borderRadius:14,color:copied?"#4ade80":"#fff",fontSize:15,fontWeight:800,boxShadow:copied?"none":"0 4px 20px rgba(99,102,241,.4)"}}>
+            {copied?"✓ "+(lang==="he"?"הועתק!":"Copied!"):"📋 "+(lang==="he"?"העתק ללוח":"Copy to Clipboard")}
+          </button>
+        </BottomSheet>
+
+        <BottomSheet open={restoreOpen} onClose={()=>setRestoreOpen(false)} T={T}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:14,textAlign:"center"}}>{lang==="he"?"שחזור מקוד גיבוי":"Restore from Backup Code"}</div>
+          <div style={{fontSize:12,color:"#f59e0b",marginBottom:10,lineHeight:1.5}}>⚠️ {lang==="he"?"פעולה זו תחליף את כל הנתונים הקיימים באפליקציה.":"This will overwrite all current data in the app."}</div>
+          <textarea value={restoreCode} onChange={e=>{setRestoreCode(e.target.value);setRestoreError(false);}} placeholder={lang==="he"?"הדביקו כאן את קוד הגיבוי...":"Paste your backup code here..."}
+            style={{width:"100%",minHeight:110,padding:"11px 14px",background:T.input,border:`1px solid ${restoreError?"#ef4444":T.inputB}`,borderRadius:13,color:T.inputText,fontSize:12.5,outline:"none",resize:"vertical",fontFamily:"monospace",marginBottom:restoreError?6:14,direction:"ltr"}}/>
+          {restoreError&&<div style={{color:"#ef4444",fontSize:11,marginBottom:14}}>{lang==="he"?"קוד לא תקין. ודאו שהעתקתם את הקוד המלא.":"Invalid code. Make sure you copied the full code."}</div>}
+          <button onClick={doRestore} disabled={!restoreCode.trim()} style={{width:"100%",padding:14,background:restoreCode.trim()?"linear-gradient(135deg,#6366f1,#8b5cf6)":"rgba(128,128,128,.2)",border:"none",borderRadius:14,color:restoreCode.trim()?"#fff":T.sub,fontSize:15,fontWeight:800,boxShadow:restoreCode.trim()?"0 4px 20px rgba(99,102,241,.4)":"none"}}>
+            {lang==="he"?"שחזר נתונים":"Restore Data"}
+          </button>
+        </BottomSheet>
+      </div>
+    );
+  }
+
+  // ─── SETTINGS TAB ────────────────────────────────────────────────────────────
+  function SettingsTab({T,S,lang,setLang,isDark,toggleTheme,birthDate,setBirthDate,babyName,setBabyName,installPrompt,installed,doInstall}){
+    const[showClear,setShowClear]=useState(false);
+    const today=new Date().toISOString().split("T")[0];
+    const earliest=new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
+    const clearData=()=>{localStorage.removeItem("ww_sleeps");localStorage.removeItem("ww_feeds");localStorage.removeItem("ww_weights");setShowClear(false);window.location.reload();};
+
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:14,padding:"0 0 16px"}}>
+        <div style={{background:T.surface,borderRadius:16,padding:16,border:`1px solid ${T.surfaceB}`,display:"flex",flexDirection:"column",gap:14}}>
+          {/* Baby name */}
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:8}}>👶 {lang==="he"?"שם התינוק":"Baby's Name"}</div>
+            <input type="text" value={babyName} placeholder={lang==="he"?"אופציונלי — לשימוש בשם קובץ הייצוא":"Optional — used in export filename"}
+              onChange={e=>{const v=e.target.value;setBabyName(v);localStorage.setItem("ww_babyname",v);}}
+              style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:12,color:T.inputText,fontSize:16,outline:"none"}}/>
+          </div>
+          {/* Birth date */}
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:8}}>📅 {S.settings.birthDate}</div>
+            <input type="date" value={birthDate} max={today} min={earliest}
+              onChange={e=>{const v=e.target.value;setBirthDate(v);if(v)localStorage.setItem("ww_date",v);else localStorage.removeItem("ww_date");}}
+              style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:12,color:T.inputText,fontSize:16,outline:"none",colorScheme:T.ds}}/>
+            <div style={{fontSize:11,color:T.muted,marginTop:6}}>{S.settings.birthHint}</div>
+          </div>
+          {/* Theme */}
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:8}}>🎨 {S.settings.theme}</div>
             <div style={{display:"flex",gap:8}}>
-              {[["card","📋 כרטיס"],["all","🗓 כל הקפיצות"]].map(([t,l])=>(
-                <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 0",background:tab===t?T.tabA:T.tabI,border:`1px solid ${tab===t?T.tabAB:T.tabIB}`,borderRadius:13,color:tab===t?T.tabAC:T.tabIC,fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s"}}>{l}</button>
+              {[["dark","🌙 "+S.settings.dark],["light","☀️ "+S.settings.light]].map(([mode,label])=>(
+                <button key={mode} onClick={()=>{if(mode==="dark"!==isDark)toggleTheme();}}
+                  style={{flex:1,padding:"10px 0",background:(isDark&&mode==="dark")||(!isDark&&mode==="light")?T.accentBg:T.surface2,border:`1px solid ${(isDark&&mode==="dark")||(!isDark&&mode==="light")?T.accentB:T.surface2B}`,borderRadius:11,color:(isDark&&mode==="dark")||(!isDark&&mode==="light")?T.accentText:T.sub,fontSize:13,fontWeight:700}}>
+                  {label}
+                </button>
               ))}
             </div>
-
-            {tab==="card"&&<>
-              <div onTouchStart={e=>setTs(e.touches[0].clientX)} onTouchEnd={e=>{if(ts===null)return;const d=ts-e.changedTouches[0].clientX;if(Math.abs(d)>44)go(d>0?-1:1);setTs(null);}} onMouseDown={e=>setDs(e.clientX)} onMouseUp={e=>{if(ds===null)return;const d=ds-e.clientX;if(Math.abs(d)>44)go(d>0?-1:1);setDs(null);}} style={{userSelect:"none",cursor:ds?"grabbing":"grab",animation:anim===1?"sl .26s ease":anim===-1?"sr .26s ease":undefined}}>
-                <Card weekNum={disp} isPast={disp<cur} isCurrent={disp===cur}/>
-              </div>
-              <div style={{display:"flex",gap:9,alignItems:"center"}}>
-                <button onClick={()=>setOffset(0)} style={{flex:1,padding:12,background:offset===0?T.tabA:T.nav,border:`1px solid ${offset===0?T.tabAB:T.navB}`,borderRadius:13,color:offset===0?T.tabAC:T.text,fontSize:14,fontWeight:800,cursor:"pointer",transition:"all .15s"}}>חזור להיום</button>
-                <ShareButton cur={cur} disp={disp}/>
-              </div>
-              <div style={{textAlign:"center",color:T.muted,fontSize:11}}>← גלוש שמאלה לשבוע הבא · ימינה לשבוע הקודם →</div>
-            </>}
-
-            {tab==="all"&&<div style={{background:T.allBg,backdropFilter:"blur(18px)",borderRadius:20,padding:15,border:`1px solid ${T.allB}`,display:"flex",flexDirection:"column",gap:7}}>
-              {LEAPS.map(lp=>{
-                const end=lp.skillsEnd??lp.restlessEnd;
-                const past=cur>end,active=cur>=lp.restlessStart&&cur<=end,away=lp.restlessStart-cur;
-                return <div key={lp.leap} onClick={()=>{setOffset(lp.restlessStart-cur);setTab("card");}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:13,background:active?T.rowA:T.rowI,border:`1px solid ${active?T.rowAB:T.rowIB}`,cursor:"pointer",opacity:past?.43:1,transition:"all .14s"}}>
-                  <span style={{fontSize:20}}>{lp.emoji}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:active?T.tabAC:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{lp.isGrey?"":`קפיצה ${lp.leap} · `}{lp.name}</div>
-                    <div style={{fontSize:11,color:T.sub}}>שבועות {lp.restlessStart}–{end}{lp.isBig&&<span style={{color:"#f59e0b",marginRight:6}}> ★</span>}</div>
-                  </div>
-                  <div style={{fontSize:11,padding:"3px 9px",borderRadius:20,flexShrink:0,fontWeight:700,background:past?"rgba(128,128,128,.2)":active?T.tabA:"rgba(128,128,128,.1)",color:past?T.sub:active?T.tabAC:T.sub}}>
-                    {past?"✓ עבר":active?"עכשיו":`בעוד ${away}ש׳`}
-                  </div>
-                </div>;
-              })}
-            </div>}
-
-            <div style={{background:T.lgBg,borderRadius:15,padding:"11px 14px",border:`1px solid ${T.lgB}`,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 14px"}}>
-              {Object.entries(CFG).map(([k,v])=><div key={k} style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14}}>{v.icon}</span><span style={{fontSize:11,color:T.sub}}>{v.label}</span></div>)}
+          </div>
+          {/* Language */}
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:8}}>🌐 {S.settings.lang}</div>
+            <div style={{display:"flex",gap:8}}>
+              {[["he","🇮🇱 עברית"],["en","🇬🇧 English"]].map(([l,label])=>(
+                <button key={l} onClick={()=>{haptic(8);setLang(l);}}
+                  style={{flex:1,padding:"10px 0",background:lang===l?T.accentBg:T.surface2,border:`1px solid ${lang===l?T.accentB:T.surface2B}`,borderRadius:11,color:lang===l?T.accentText:T.sub,fontSize:13,fontWeight:700}}>
+                  {label}
+                </button>
+              ))}
             </div>
-
-            <p style={{color:T.muted,fontSize:11,textAlign:"center",margin:0,lineHeight:1.8}}>
-              מבוסס על Wonder Weeks (van de Rijt & Plooij). הקפיצות הן ממוצע – כל תינוק יחיד. בכל ספק רפואי, פנה לרופא ילדים.<br/>
-              <span style={{opacity:.7}}>⚠️ לא הכל מדויק — התזמון בפועל יכול להשתנות בשבוע-שבועיים לכל כיוון.</span>
-            </p>
-          </>)}
+          </div>
         </div>
-      </div>;
-    }
 
-    const root=ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App/>);
+        {/* Baby weight tracking */}
+        <WeightSection T={T} S={S} lang={lang}/>
+
+        {/* Export data */}
+        <ExportSection T={T} S={S} lang={lang} babyName={babyName} birthDate={birthDate}/>
+
+        {/* Backup & restore */}
+        <BackupSection T={T} S={S} lang={lang} babyName={babyName} birthDate={birthDate}/>
+
+        {/* Install */}
+        {installPrompt&&!installed&&(
+          <button onClick={doInstall} style={{width:"100%",padding:14,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:14,color:"#fff",fontSize:15,fontWeight:800,boxShadow:"0 4px 20px rgba(99,102,241,.4)",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v13M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+            {S.settings.install}
+          </button>
+        )}
+        {installed&&<div style={{textAlign:"center",color:T.accentText,fontSize:13,fontWeight:700}}>{S.settings.installed}</div>}
+
+        {/* Clear data */}
+        {!showClear&&<button onClick={()=>{haptic(8);setShowClear(true);}} style={{padding:13,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.25)",borderRadius:14,color:"#ef4444",fontSize:13,fontWeight:700}}>{S.settings.clearData}</button>}
+        {showClear&&<div style={{background:"rgba(239,68,68,.1)",borderRadius:14,padding:16,border:"1px solid rgba(239,68,68,.25)",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{color:"#ef4444",fontSize:13,fontWeight:600,textAlign:"center"}}>{S.settings.clearConfirm}</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowClear(false)} style={{flex:1,padding:11,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:11,color:T.sub,fontSize:14,fontWeight:700}}>{S.settings.no}</button>
+            <button onClick={()=>{haptic(15);clearData();}} style={{flex:1,padding:11,background:"#ef4444",border:"none",borderRadius:11,color:"#fff",fontSize:14,fontWeight:700}}>{S.settings.yes}</button>
+          </div>
+        </div>}
+      </div>
+    );
+  }
+
+  // ─── BOTTOM NAV ──────────────────────────────────────────────────────────────
+  function BottomNav({activeTab,setTab,T,S,lang}){
+    const tabs=[
+      {id:"leaps",label:S.tabs.leaps.replace(/^\S+\s/,""),Icon:IconMoonStar},
+      {id:"sleep",label:S.tabs.sleep.replace(/^\S+\s/,""),Icon:IconMoonZzz},
+      {id:"feed",label:S.tabs.feed.replace(/^\S+\s/,""),Icon:IconBottle},
+      {id:"settings",label:S.tabs.settings.replace(/^\S+\s/,""),Icon:IconGear},
+    ];
+    return<div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:T.navBg,backdropFilter:"blur(24px)",borderTop:`1px solid ${T.navB}`,display:"flex",paddingBottom:"env(safe-area-inset-bottom,0px)",boxShadow:"0 -8px 30px rgba(0,0,0,.15)"}}>
+      {tabs.map(({id,label,Icon})=>{
+        const active=activeTab===id;
+        return<button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"9px 4px 7px",background:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+          <div style={{width:46,height:27,borderRadius:15,background:active?T.accentBg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"background .25s ease"}}>
+            <Icon size={19} color={active?T.accentText:T.sub}/>
+          </div>
+          <span style={{fontSize:10,fontWeight:active?700:500,color:active?T.accentText:T.sub,opacity:active?1:.65,transition:"all .2s"}}>{label}</span>
+        </button>;
+      })}
+    </div>;
+  }
+
+  // ─── APP ─────────────────────────────────────────────────────────────────────
+  function App(){
+    const[isDark,setIsDark]=useState(()=>{const d=localStorage.getItem("ww_theme")!=="light";document.body.style.background=d?"#0a0f1e":"#faf8f5";return d;});
+    const[lang,setLang]=useState(()=>loadLS("ww_lang","he"));
+    const[birthDate,setBirthDate]=useState(()=>localStorage.getItem("ww_date")||"");
+    const[babyName,setBabyName]=useState(()=>localStorage.getItem("ww_babyname")||"");
+    const[sunTimes,setSunTimes]=useState(()=>loadLS("ww_suntimes",null));
+    useEffect(()=>{
+      if(!navigator.geolocation)return;
+      navigator.geolocation.getCurrentPosition(
+        pos=>{
+          const st=calcSunTimes(pos.coords.latitude,pos.coords.longitude);
+          setSunTimes(st); saveLS("ww_suntimes",st);
+        },
+        ()=>{}, {timeout:8000,maximumAge:3600000}
+      );
+    },[]);
+    const[activeTab,setActiveTab]=useState("leaps");
+    const[installPrompt,setInstallPrompt]=useState(null);
+    const[installed,setInstalled]=useState(false);
+
+    useEffect(()=>saveLS("ww_lang",lang),[lang]);
+    useEffect(()=>{
+      const h=e=>{e.preventDefault();setInstallPrompt(e);};
+      window.addEventListener("beforeinstallprompt",h);
+      window.addEventListener("appinstalled",()=>{setInstalled(true);setInstallPrompt(null);});
+      return()=>window.removeEventListener("beforeinstallprompt",h);
+    },[]);
+
+    const toggleTheme=()=>{haptic(10);setIsDark(d=>{const n=!d;localStorage.setItem("ww_theme",n?"dark":"light");document.body.style.background=n?"#0a0f1e":"#faf8f5";return n;});};
+    const doInstall=()=>{if(!installPrompt)return;haptic(10);installPrompt.prompt();installPrompt.userChoice.then(()=>setInstallPrompt(null));};
+
+    const T=isDark?DARK:LIGHT;
+    const S=LANG[lang];
+
+    const TAB_ORDER=["leaps","sleep","feed","settings"];
+    const[tabAnim,setTabAnim]=useState(null);
+    const setTabAndSave=id=>{
+      if(id===activeTab)return;
+      const pi=TAB_ORDER.indexOf(activeTab), ni=TAB_ORDER.indexOf(id);
+      setTabAnim(ni>pi?1:-1);
+      haptic(8);
+      setActiveTab(id);
+    };
+    const dir=lang==="he"?"rtl":"ltr";
+
+    return<div dir={dir} style={{minHeight:"100vh",minHeight:"100dvh",background:T.bg,overflowX:"hidden",transition:"background .3s",paddingBottom:80}}>
+      <style>{`
+        @keyframes twinkle{from{opacity:.06}to{opacity:.65}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(99,102,241,.4)}50%{transform:scale(1.03);box-shadow:0 0 0 12px rgba(99,102,241,0)}}
+        @keyframes sl{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes sr{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        input[type=date]{color-scheme:${T.ds}}
+        button{transition:transform .18s cubic-bezier(.34,1.56,.64,1),opacity .15s}
+        button:active{transform:scale(.95)!important;opacity:.85}
+      `}</style>
+      <Stars isDark={isDark}/>
+      <div style={{position:"relative",zIndex:1,maxWidth:480,margin:"0 auto",padding:"calc(14px + env(safe-area-inset-top,0px)) 14px 0",animation:"fadeUp .4s ease"}}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:38,height:38,borderRadius:12,background:T.accentBg,display:"flex",alignItems:"center",justifyContent:"center",filter:T.glow}}>
+              <IconMoonStar size={19} color={T.accentText}/>
+            </div>
+            <div><div style={{fontSize:17,fontWeight:900,color:T.h1,letterSpacing:"-.02em",textShadow:T.h1s}}>{S.appName}</div><div style={{fontSize:11,color:T.sub}}>{S.appSub}</div></div>
+          </div>
+          <button onClick={toggleTheme} style={{background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:11,padding:"8px 11px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {isDark?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.sub} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            :<IconMoonStar size={16} color={T.sub}/>}
+          </button>
+        </div>
+
+        {/* Tab content */}
+        <div key={activeTab} style={{animation:tabAnim===1?"sl .3s cubic-bezier(.22,1,.36,1)":tabAnim===-1?"sr .3s cubic-bezier(.22,1,.36,1)":"fadeUp .3s ease"}}>
+          {activeTab==="leaps"&&<LeapsTab T={T} S={S} lang={lang} birthDate={birthDate} setTab={setTabAndSave}/>}
+          {activeTab==="sleep"&&<SleepTab T={T} S={S} lang={lang} sunTimes={sunTimes}/>}
+          {activeTab==="feed"&&<FeedTab T={T} S={S} lang={lang}/>}
+          {activeTab==="settings"&&<SettingsTab T={T} S={S} lang={lang} setLang={setLang} isDark={isDark} toggleTheme={toggleTheme} birthDate={birthDate} setBirthDate={setBirthDate} babyName={babyName} setBabyName={setBabyName} installPrompt={installPrompt} installed={installed} doInstall={doInstall}/>}
+        </div>
+      </div>
+      <BottomNav activeTab={activeTab} setTab={setTabAndSave} T={T} S={S} lang={lang}/>
+    </div>;
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
   </script>
 </body>
 </html>
