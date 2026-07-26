@@ -81,7 +81,7 @@
         title:"מעקב שינה",startSleep:"התחל שינה",endSleep:"סיים שינה",
         sleeping:"ישן עכשיו",awake:"ער",duration:"משך",
         nextSleep:"שינה הבאה",nextIn:"בעוד ~",mins:"דק׳",hrs:"שע׳",
-        avgDuration:"ממוצע משך שינה",totalToday:"סה״כ שינה היום",
+        avgDuration:"ממוצע משך שינה",totalToday:"שינה מאז ההשכמה",
         history:"היסטוריה",noSleeps:"עדיין אין שינות מתועדות",
         deleteConfirm:"מחק שינה זו?",edit:"ערוך",delete:"מחק",
         days:["א","ב","ג","ד","ה","ו","ש"],
@@ -134,7 +134,7 @@
         title:"Sleep Tracker",startSleep:"Start Sleep",endSleep:"End Sleep",
         sleeping:"Sleeping",awake:"Awake",duration:"Duration",
         nextSleep:"Next Sleep",nextIn:"In ~",mins:"min",hrs:"hr",
-        avgDuration:"Avg sleep duration",totalToday:"Total sleep today",
+        avgDuration:"Avg sleep duration",totalToday:"Sleep since wake-up",
         history:"History",noSleeps:"No sleep sessions logged yet",
         deleteConfirm:"Delete this sleep session?",edit:"Edit",delete:"Delete",
         days:["Su","Mo","Tu","We","Th","Fr","Sa"],
@@ -364,6 +364,18 @@
     grey:    {icon:"🌫️",g1:"#ede9fe",g2:"#f5f3ff",accent:"#8b5cf6",text:"#4c1d95"},
   };
   const BARCOL={sunny:"#4ade80",restless:"#fb923c",fussy:"#ef4444",skills:"#60a5fa",grey:"#a78bfa"};
+
+  // Cycling color palette so entries from the same calendar day share a color,
+  // making it easy to visually scan groupings in history lists.
+  const DAY_COLORS=["#6366f1","#f97316","#10b981","#ec4899","#06b6d4","#eab308"];
+  function dayLabelFor(ts,lang){
+    const k=dayKey(ts);
+    const todayK=dayKey(Date.now());
+    const yestK=dayKey(Date.now()-86400000);
+    if(k===todayK)return lang==="he"?"היום":"Today";
+    if(k===yestK)return lang==="he"?"אתמול":"Yesterday";
+    return new Date(ts).toLocaleDateString(lang==="he"?"he-IL":"en-US",{weekday:"short",day:"numeric",month:"short"});
+  }
   const STARS=Array.from({length:50},()=>({x:Math.random()*100,y:Math.random()*100,sz:Math.random()*2+.5,d:Math.random()*4+2,o:Math.random()*.4+.08}));
 
   // ─── STORAGE ─────────────────────────────────────────────────────────────────
@@ -487,6 +499,25 @@
   }
 
   // ─── EMPTY STATE (soft icon badge instead of plain text) ────────────────────
+  // ─── COLLAPSIBLE DAY GROUP (groups history rows by calendar day) ───────────
+  function DayGroup({T,dayStart,lang,accent,summary,defaultOpen,children}){
+    const[open,setOpen]=useState(defaultOpen);
+    const label=dayLabelFor(dayStart,lang);
+    return(
+      <div>
+        <button onClick={()=>{haptic(6);setOpen(o=>!o);}} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 10px",background:open?`${accent}14`:"transparent",border:`1px solid ${open?accent+"33":"transparent"}`,borderRadius:11,marginBottom:open?6:3}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:accent,flexShrink:0}}/>
+            <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{label}</span>
+            <span style={{fontSize:11,color:T.sub,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{summary}</span>
+          </div>
+          <span style={{fontSize:11,color:T.sub,transition:"transform .2s",display:"inline-block",transform:open?"rotate(180deg)":"rotate(0deg)",flexShrink:0}}>▾</span>
+        </button>
+        {open&&<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>{children}</div>}
+      </div>
+    );
+  }
+
   function EmptyState({Icon,text,accent,T}){
     return<div style={{textAlign:"center",padding:"26px 10px",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
       <div style={{width:52,height:52,borderRadius:"50%",background:`${accent}15`,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -653,8 +684,17 @@
       for(let i=6;i>=0;i--){
         const dayStart=startOfDay(now-i*86400000);
         const dayEnd=dayStart+86400000;
-        const dayEvents=events.filter(e=>e.start>=dayStart&&e.start<dayEnd);
-        result.push({dayStart,events:dayEvents});
+        const prevDayStart=dayStart-86400000;
+        // Events that start within this day
+        const startsToday=events.filter(e=>e.start>=dayStart&&e.start<dayEnd);
+        // Events that started the PREVIOUS day but whose end (or "now" if ongoing)
+        // crosses into this day — these get a continuation sliver at the top.
+        const continuesFromPrev=events.filter(e=>{
+          if(e.start<prevDayStart||e.start>=dayStart)return false;
+          const effectiveEnd=e.end||now;
+          return effectiveEnd>=dayStart;
+        });
+        result.push({dayStart,startsToday,continuesFromPrev});
       }
       return result;
     },[events]);
@@ -672,26 +712,39 @@
     return<div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`,animation:"fadeUp .3s ease"}}>
       <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:10}}>{S[type].patternTitle}</div>
       <div style={{display:"flex",gap:4}}>
-        {/* Time axis */}
-        <div style={{display:"flex",flexDirection:"column",justifyContent:"space-between",height:CELL_H,paddingBottom:20,flexShrink:0}}>
-          {["00","06","12","18","24"].map(h=><div key={h} style={{fontSize:9,color:T.muted,lineHeight:1}}>{h}</div>)}
+        {/* Time axis — absolutely positioned at exact 0/25/50/75/100% so it always
+            lines up with the hour grid-lines inside each day column, regardless of
+            the day-name label row's height below. */}
+        <div style={{display:"flex",flexDirection:"column",flexShrink:0}}>
+          <div style={{position:"relative",height:CELL_H,width:20}}>
+            {[["00",0],["06",25],["12",50],["18",75],["24",100]].map(([h,pct])=>(
+              <div key={h} style={{position:"absolute",top:`${pct}%`,transform:pct===0?"translateY(0)":pct===100?"translateY(-100%)":"translateY(-50%)",fontSize:9,color:T.muted,lineHeight:1}}>{h}</div>
+            ))}
+          </div>
+          <div style={{height:17}}/>
         </div>
         {/* Day columns */}
-        {days.map(({dayStart,events:dayEvts},di)=>{
+        {days.map(({dayStart,startsToday,continuesFromPrev},di)=>{
           const dayLabel=dayNames[(new Date(dayStart)).getDay()];
           return<div key={di} style={{flex:1,display:"flex",flexDirection:"column",gap:3}}>
             <div style={{height:CELL_H,background:T.surface2,borderRadius:6,position:"relative",overflow:"hidden"}}>
               {/* Hour grid lines */}
               {[6,12,18].map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${(h/24)*100}%`,height:1,background:"rgba(128,128,128,.12)"}}/>)}
-              {type==="sleep"&&dayEvts.map((ev,ei)=>{
+              {type==="sleep"&&startsToday.map((ev,ei)=>{
                 const startMin=minutesInDay(ev.start);
-                const endMin=ev.end?minutesInDay(ev.end):Math.min(minutesInDay(ev.start)+60,1440);
+                const crossesMidnight=ev.end?(dayKey(ev.end)!==dayKey(ev.start)):(dayKey(Date.now())!==dayKey(ev.start));
+                const endMin=crossesMidnight?1440:(ev.end?minutesInDay(ev.end):Math.min(minutesInDay(ev.start)+60,1440));
                 const durMin=endMin-startMin;
                 const topPct=(startMin/1440)*100;
                 const hPct=Math.max((durMin/1440)*100,1.5);
-                return<div key={ei} style={{position:"absolute",left:2,right:2,top:`${topPct}%`,height:`${hPct}%`,background:color,borderRadius:3,opacity:.85}}/>;
+                return<div key={"s"+ei} style={{position:"absolute",left:2,right:2,top:`${topPct}%`,height:`${hPct}%`,background:color,borderRadius:3,opacity:.85}}/>;
               })}
-              {type==="feed"&&dayEvts.map((ev,ei)=>{
+              {type==="sleep"&&continuesFromPrev.map((ev,ei)=>{
+                const endMin=ev.end?minutesInDay(ev.end):minutesInDay(Date.now());
+                const hPct=Math.max((endMin/1440)*100,1.5);
+                return<div key={"c"+ei} style={{position:"absolute",left:2,right:2,top:0,height:`${hPct}%`,background:color,borderRadius:3,opacity:.85}}/>;
+              })}
+              {type==="feed"&&startsToday.map((ev,ei)=>{
                 const min=minutesInDay(ev.start);
                 const topPct=(min/1440)*100;
                 return<div key={ei} style={{position:"absolute",left:2,right:2,top:`calc(${topPct}% - 3px)`,height:6,background:color,borderRadius:3,opacity:.9}}/>;
@@ -714,7 +767,13 @@
     const CX=SIZE/2, CY=SIZE/2;
     const R=118; // track radius
     const todayStart=startOfDay(Date.now());
-    const todaySleeps=sleeps.filter(s=>s.start>=todayStart);
+    const dayEndTs=todayStart+86400000;
+    // Include sleeps that overlap today's 24h window — not just ones that started today —
+    // so an overnight sleep (start yesterday evening, end this morning) draws in full.
+    const todaySleeps=sleeps.filter(s=>{
+      const sEnd=s.end||now;
+      return s.start<dayEndTs && sEnd>=todayStart;
+    });
 
     // minutes-of-day → canvas angle (midnight = top)
     const m2a=m=>(m/1440)*Math.PI*2-Math.PI/2;
@@ -807,7 +866,11 @@
       todaySleeps.forEach((s,i)=>{
         const sm=minutesInDay(s.start);
         const em=s.end?minutesInDay(s.end):minutesInDay(now);
-        const midAngle=m2a((sm+em)/2);
+        // If the session wraps past midnight (em < sm), treat em as em+1440 for the
+        // midpoint math, then normalize back into 0-1440 range.
+        const rawMid=em<sm ? (sm+em+1440)/2 : (sm+em)/2;
+        const midMin=rawMid%1440;
+        const midAngle=m2a(midMin);
         const {x,y}=polar(midAngle,PILL_R);
         const dur=s.end?s.end-s.start:now-s.start;
         caps.push({x,y,label:fmtTime(s.start),sublabel:fmtDur(dur),solid:true,active:!s.end});
@@ -899,7 +962,17 @@
 
     const activeSleep=sleeps.find(s=>!s.end);
     const todayStart=startOfDay(Date.now());
-    const todaySleeps=sleeps.filter(s=>s.start>=todayStart);
+
+    // Find the most recent overnight sleep (start/end on different calendar days)
+    // and use ITS wake time as the boundary for "today's sleep" — this is more
+    // meaningful for babies than a rigid midnight cutoff.
+    const morningWakeTs=useMemo(()=>{
+      const overnightSleeps=sleeps.filter(s=>s.end&&dayKey(s.start)!==dayKey(s.end)&&s.end<=now);
+      if(!overnightSleeps.length)return todayStart;
+      return overnightSleeps.reduce((latest,s)=>s.end>latest?s.end:latest,0);
+    },[sleeps,now]);
+
+    const todaySleeps=sleeps.filter(s=>s.start>=morningWakeTs);
     const totalTodayMs=todaySleeps.reduce((acc,s)=>{const dur=s.end?s.end-s.start:now-s.start;return acc+dur;},0);
     const nowMin=minutesInDay(now);
     const yesterday=sleeps.filter(s=>s.start>=todayStart-86400000&&s.start<todayStart);
@@ -928,7 +1001,7 @@
       else setSleeps(prev=>[...prev,{id:Date.now(),start:Date.now(),end:null}]);
     };
     const deleteSleep=id=>setSleeps(prev=>prev.filter(s=>s.id!==id));
-    const recentSleeps=[...sleeps].filter(s=>s.start>=todayStart-7*86400000).sort((a,b)=>b.start-a.start).slice(0,15);
+    const recentSleeps=[...sleeps].filter(s=>s.start>=todayStart-13*86400000).sort((a,b)=>b.start-a.start).slice(0,500);
 
     // ── Edit sheet state ──
     const[editSheetOpen,setEditSheetOpen]=useState(false);
@@ -980,7 +1053,7 @@
         {/* 7-day pattern */}
         <PatternGrid events={sleeps} color={T.sleepColor} bgColor={T.sleepBg} T={T} S={S} type="sleep"/>
 
-        {/* History */}
+        {/* History — grouped by day, collapsible */}
         <div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:recentSleeps.length?10:0}}>
             <div style={{fontSize:12,fontWeight:700,color:T.sub}}>{S.sleep.history}</div>
@@ -988,13 +1061,32 @@
           </div>
           {recentSleeps.length===0
             ?<EmptyState Icon={IconMoonZzz} accent={T.sleepColor} T={T} text={S.sleep.noSleeps}/>
-            :<div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {recentSleeps.map(s=>(
-                  <SwipeableRow key={s.id} T={T} onDelete={()=>deleteSleep(s.id)} onTap={()=>openEditSleep(s)}>
-                    <SleepRow s={s} now={now} T={T} S={S} lang={lang}/>
-                  </SwipeableRow>
-                ))}
-              </div>}
+            :(()=>{
+                const groups=[];
+                const map={};
+                recentSleeps.forEach(s=>{
+                  const k=dayKey(s.start);
+                  if(!(k in map)){map[k]={dayStart:startOfDay(s.start),entries:[]};groups.push(map[k]);}
+                  map[k].entries.push(s);
+                });
+                return<div style={{display:"flex",flexDirection:"column",gap:2}}>
+                  {groups.map((g,gi)=>{
+                    const c=DAY_COLORS[gi%DAY_COLORS.length];
+                    const totalMs=g.entries.reduce((acc,s)=>acc+(s.end?s.end-s.start:now-s.start),0);
+                    const n=g.entries.length;
+                    const countLabel=lang==="he"?`${n} ${n===1?"שינה":"שינות"}`:`${n} ${n===1?"sleep":"sleeps"}`;
+                    return(
+                      <DayGroup key={dayKey(g.dayStart)} T={T} dayStart={g.dayStart} lang={lang} accent={c} defaultOpen={gi===0} summary={`${countLabel} · ${fmtDur(totalMs)}`}>
+                        {g.entries.map(s=>(
+                          <SwipeableRow key={s.id} T={T} onDelete={()=>deleteSleep(s.id)} onTap={()=>openEditSleep(s)}>
+                            <SleepRow s={s} now={now} T={T} S={S} lang={lang} dayColor={c}/>
+                          </SwipeableRow>
+                        ))}
+                      </DayGroup>
+                    );
+                  })}
+                </div>;
+              })()}
         </div>
 
         {/* Edit sleep bottom sheet */}
@@ -1024,13 +1116,14 @@
     );
   }
 
-  function SleepRow({s,now,T,S,lang}){
+  function SleepRow({s,now,T,S,lang,dayColor}){
     const dur=s.end?s.end-s.start:now-s.start;
     const isActive=!s.end;
     const arrow=lang==="he"?"←":"→";
+    const c=dayColor||"#6366f1";
     return<div style={{display:"flex",alignItems:"center",gap:11,padding:"9px 10px"}}>
-      <div style={{width:32,height:32,borderRadius:11,background:isActive?"rgba(99,102,241,.18)":"rgba(128,128,128,.12)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-        <IconMoonZzz size={15} color={isActive?"#818cf8":T.sub}/>
+      <div style={{width:32,height:32,borderRadius:11,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:isActive?`0 0 0 2px ${c}88`:"none"}}>
+        <IconMoonZzz size={15} color={c}/>
       </div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13.5,fontWeight:700,color:T.text}}>
@@ -1063,7 +1156,7 @@
 
     const todayStart=startOfDay(Date.now());
     const todayFeeds=feeds.filter(f=>f.start>=todayStart);
-    const recentFeeds=[...feeds].sort((a,b)=>b.start-a.start).slice(0,20);
+    const recentFeeds=[...feeds].filter(f=>f.start>=todayStart-13*86400000).sort((a,b)=>b.start-a.start).slice(0,500);
     const lastFeed=recentFeeds[0];
 
     // Avg interval prediction
@@ -1144,7 +1237,7 @@
         {/* Pattern grid */}
         <PatternGrid events={feeds} color={T.feedColor} bgColor={T.feedBg} T={T} S={S} type="feed"/>
 
-        {/* History */}
+        {/* History — grouped by day, collapsible */}
         <div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:recentFeeds.length?10:0}}>
             <div style={{fontSize:12,fontWeight:700,color:T.sub}}>{S.feed.history}</div>
@@ -1152,13 +1245,31 @@
           </div>
           {recentFeeds.length===0
             ?<EmptyState Icon={IconBottle} accent={T.feedColor} T={T} text={S.feed.noFeeds}/>
-            :<div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {recentFeeds.map(f=>(
-                  <SwipeableRow key={f.id} T={T} onDelete={()=>deleteFeed(f.id)} onTap={()=>openEditSheet(f)}>
-                    <FeedRow f={f} T={T} S={S} typeEmoji={typeEmoji} lang={lang}/>
-                  </SwipeableRow>
-                ))}
-              </div>}
+            :(()=>{
+                const groups=[];
+                const map={};
+                recentFeeds.forEach(f=>{
+                  const k=dayKey(f.start);
+                  if(!(k in map)){map[k]={dayStart:startOfDay(f.start),entries:[]};groups.push(map[k]);}
+                  map[k].entries.push(f);
+                });
+                return<div style={{display:"flex",flexDirection:"column",gap:2}}>
+                  {groups.map((g,gi)=>{
+                    const c=DAY_COLORS[gi%DAY_COLORS.length];
+                    const n=g.entries.length;
+                    const countLabel=lang==="he"?`${n} ${n===1?"ארוחה":"ארוחות"}`:`${n} ${n===1?"feed":"feeds"}`;
+                    return(
+                      <DayGroup key={dayKey(g.dayStart)} T={T} dayStart={g.dayStart} lang={lang} accent={c} defaultOpen={gi===0} summary={countLabel}>
+                        {g.entries.map(f=>(
+                          <SwipeableRow key={f.id} T={T} onDelete={()=>deleteFeed(f.id)} onTap={()=>openEditSheet(f)}>
+                            <FeedRow f={f} T={T} S={S} typeEmoji={typeEmoji} lang={lang} dayColor={c}/>
+                          </SwipeableRow>
+                        ))}
+                      </DayGroup>
+                    );
+                  })}
+                </div>;
+              })()}
         </div>
 
         {/* Add / edit feed bottom sheet */}
@@ -1212,12 +1323,13 @@
     );
   }
 
-  function FeedRow({f,T,S,typeEmoji,lang}){
+  function FeedRow({f,T,S,typeEmoji,lang,dayColor}){
     const hasBoth=f.prepared&&f.amount&&f.prepared!==f.amount;
     const singleMl=f.amount??f.prepared;
     const finished=f.prepared&&f.amount&&f.amount>=f.prepared;
+    const c=dayColor||"#f97316";
     return<div style={{display:"flex",alignItems:"center",gap:11,padding:"9px 10px"}}>
-      <div style={{width:32,height:32,borderRadius:11,background:"rgba(249,115,22,.14)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:15}}>
+      <div style={{width:32,height:32,borderRadius:11,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:15}}>
         {typeEmoji[f.type]||"🍼"}
       </div>
       <div style={{flex:1,minWidth:0}}>
