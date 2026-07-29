@@ -188,32 +188,135 @@
   }
   function useAuth() { return React.useContext(AuthContext); }
 
+  function mergeArrayData(localList = [], cloudList = [], deletedIdsMap = {}) {
+    const mergedMap = new Map();
+    const getItemTime = (item) => {
+      if (!item) return 0;
+      return item.updatedAt || item.start || item.date || item.id || 0;
+    };
+
+    for (const item of (cloudList || [])) {
+      if (!item || item.id === undefined || item.id === null) continue;
+      const strId = String(item.id);
+      if (deletedIdsMap[strId]) continue;
+      mergedMap.set(strId, item);
+    }
+
+    for (const item of (localList || [])) {
+      if (!item || item.id === undefined || item.id === null) continue;
+      const strId = String(item.id);
+      if (deletedIdsMap[strId]) continue;
+
+      const existing = mergedMap.get(strId);
+      if (!existing) {
+        mergedMap.set(strId, item);
+      } else {
+        const localTime = getItemTime(item);
+        const cloudTime = getItemTime(existing);
+        if (localTime > cloudTime) {
+          mergedMap.set(strId, item);
+        } else if (localTime === cloudTime) {
+          mergedMap.set(strId, { ...existing, ...item });
+        }
+      }
+    }
+
+    return Array.from(mergedMap.values());
+  }
+
   function useSyncState(key, initialValue) {
     const { roomId } = useAuth();
     const [state, setState] = useState(() => loadLS(key, initialValue));
 
     useEffect(() => {
+      const handleCustomSync = () => {
+        const localVal = loadLS(key, initialValue);
+        setState(localVal);
+      };
+      window.addEventListener('ww_local_data_restored', handleCustomSync);
+      return () => window.removeEventListener('ww_local_data_restored', handleCustomSync);
+    }, [key, initialValue]);
+
+    useEffect(() => {
       if (!roomId || !window.db) return;
-      const unsubscribe = window.onSnapshot(window.doc(window.db, "rooms", roomId), (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data[key] !== undefined) {
-            setState(data[key]);
-            saveLS(key, data[key]);
+
+      const roomRef = window.doc(window.db, "rooms", roomId);
+      const unsubscribe = window.onSnapshot(roomRef, (docSnap) => {
+        if (!docSnap.exists()) return;
+
+        const cloudData = docSnap.data();
+        const cloudVal = cloudData[key];
+        const localVal = loadLS(key, initialValue);
+
+        if (Array.isArray(initialValue) || Array.isArray(localVal) || Array.isArray(cloudVal)) {
+          const localArr = Array.isArray(localVal) ? localVal : [];
+          const cloudArr = Array.isArray(cloudVal) ? cloudVal : [];
+          const localDeleted = loadLS("ww_deleted_ids", {});
+          const cloudDeleted = cloudData.ww_deleted_ids || {};
+          const mergedDeleted = { ...localDeleted, ...cloudDeleted };
+
+          const mergedArr = mergeArrayData(localArr, cloudArr, mergedDeleted);
+
+          saveLS("ww_deleted_ids", mergedDeleted);
+          saveLS(key, mergedArr);
+          setState(mergedArr);
+
+          const cloudArrJson = JSON.stringify(cloudArr);
+          const mergedArrJson = JSON.stringify(mergedArr);
+          const cloudDelJson = JSON.stringify(cloudDeleted);
+          const mergedDelJson = JSON.stringify(mergedDeleted);
+
+          if (cloudArrJson !== mergedArrJson || cloudDelJson !== mergedDelJson) {
+            window.setDoc(roomRef, {
+              [key]: mergedArr,
+              ww_deleted_ids: mergedDeleted
+            }, { merge: true }).catch(console.error);
+          }
+        } else {
+          if (cloudVal !== undefined && cloudVal !== null && cloudVal !== "") {
+            setState(cloudVal);
+            saveLS(key, cloudVal);
+          } else if (localVal !== undefined && localVal !== null && localVal !== "") {
+            setState(localVal);
+            window.setDoc(roomRef, { [key]: localVal }, { merge: true }).catch(console.error);
           }
         }
+      }, (err) => {
+        console.error("Snapshot error for", key, err);
       });
+
       return () => unsubscribe();
-    }, [roomId, key]);
+    }, [roomId, key, initialValue]);
 
     const setSyncedState = useCallback((newValue) => {
       setState(prev => {
         const updated = typeof newValue === 'function' ? newValue(prev) : newValue;
         saveLS(key, updated);
+
         if (roomId && window.db) {
-          window.setDoc(window.doc(window.db, "rooms", roomId), {
-            [key]: updated
-          }, { merge: true }).catch(console.error);
+          const roomRef = window.doc(window.db, "rooms", roomId);
+          const payload = { [key]: updated };
+
+          if (Array.isArray(prev) && Array.isArray(updated)) {
+            const updatedIds = new Set(updated.filter(i => i && i.id !== undefined && i.id !== null).map(i => String(i.id)));
+            const deletedMap = loadLS("ww_deleted_ids", {});
+            let changedDeleted = false;
+            for (const item of prev) {
+              if (item && item.id !== undefined && item.id !== null) {
+                const strId = String(item.id);
+                if (!updatedIds.has(strId)) {
+                  deletedMap[strId] = Date.now();
+                  changedDeleted = true;
+                }
+              }
+            }
+            if (changedDeleted) {
+              saveLS("ww_deleted_ids", deletedMap);
+              payload.ww_deleted_ids = deletedMap;
+            }
+          }
+
+          window.setDoc(roomRef, payload, { merge: true }).catch(console.error);
         }
         return updated;
       });
@@ -1736,6 +1839,7 @@
 
   // ─── BACKUP & RESTORE SECTION ────────────────────────────────────────────────
   function BackupSection({T,S,lang,babyName,birthDate}){
+    const { roomId } = useAuth();
     const[copied,setCopied]=useState(false);
     const[codeSheetOpen,setCodeSheetOpen]=useState(false);
     const[backupCode,setBackupCode]=useState("");
@@ -1776,18 +1880,62 @@
 
     const openRestore=()=>{haptic(8);setRestoreCode("");setRestoreError(false);setRestoreOpen(true);};
 
-    const doRestore=()=>{
+    const doRestore=async()=>{
       try{
         const state=decodeBackup(restoreCode);
         if(!state||typeof state!=="object")throw new Error("invalid");
-        if(state.birthDate)localStorage.setItem("ww_date",state.birthDate);
-        if(state.babyName!==undefined)localStorage.setItem("ww_babyname",state.babyName);
-        saveLS("ww_sleeps",state.sleeps||[]);
-        saveLS("ww_feeds",state.feeds||[]);
-        saveLS("ww_weights",state.weights||[]);
+
+        const deletedMap = loadLS("ww_deleted_ids", {});
+
+        const restoredSleeps = (state.sleeps || []).map(s => ({ ...s, updatedAt: s.updatedAt || s.start || Date.now() }));
+        const restoredFeeds = (state.feeds || []).map(f => ({ ...f, updatedAt: f.updatedAt || f.start || Date.now() }));
+        const restoredWeights = (state.weights || []).map(w => ({ ...w, updatedAt: w.updatedAt || w.date || Date.now() }));
+
+        [...restoredSleeps, ...restoredFeeds, ...restoredWeights].forEach(item => {
+          if (item && item.id !== undefined && item.id !== null) {
+            delete deletedMap[String(item.id)];
+          }
+        });
+        saveLS("ww_deleted_ids", deletedMap);
+
+        const currentSleeps = loadLS("ww_sleeps", []);
+        const currentFeeds = loadLS("ww_feeds", []);
+        const currentWeights = loadLS("ww_weights", []);
+
+        const mergedSleeps = mergeArrayData(currentSleeps, restoredSleeps, deletedMap);
+        const mergedFeeds = mergeArrayData(currentFeeds, restoredFeeds, deletedMap);
+        const mergedWeights = mergeArrayData(currentWeights, restoredWeights, deletedMap);
+
+        saveLS("ww_sleeps", mergedSleeps);
+        saveLS("ww_feeds", mergedFeeds);
+        saveLS("ww_weights", mergedWeights);
+
+        const newBirthDate = state.birthDate || localStorage.getItem("ww_date") || "";
+        const newBabyName = state.babyName !== undefined ? state.babyName : (localStorage.getItem("ww_babyname") || "");
+
+        if(newBirthDate) localStorage.setItem("ww_date", newBirthDate);
+        if(newBabyName !== undefined) localStorage.setItem("ww_babyname", newBabyName);
+
+        if (roomId && window.db) {
+          const roomRef = window.doc(window.db, "rooms", roomId);
+          const payload = {
+            ww_sleeps: mergedSleeps,
+            ww_feeds: mergedFeeds,
+            ww_weights: mergedWeights,
+            ww_deleted_ids: deletedMap
+          };
+          if (newBirthDate) payload.ww_date = newBirthDate;
+          if (newBabyName !== undefined) payload.ww_babyname = newBabyName;
+
+          await window.setDoc(roomRef, payload, { merge: true }).catch(console.error);
+        }
+
+        window.dispatchEvent(new CustomEvent('ww_local_data_restored'));
         haptic(15);
-        window.location.reload();
+        setRestoreOpen(false);
+        setTimeout(() => window.location.reload(), 300);
       }catch(e){
+        console.error("Restore error:", e);
         haptic(20);
         setRestoreError(true);
       }
