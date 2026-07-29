@@ -58,7 +58,7 @@
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, browserPopupRedirectResolver } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-    import { getFirestore, doc, onSnapshot, setDoc, getDoc, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
     import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js';
 
     const firebaseConfig = {
@@ -95,6 +95,7 @@
     window.onSnapshot = onSnapshot;
     window.setDoc = setDoc;
     window.getDoc = getDoc;
+        window.deleteDoc = deleteDoc;
     window.collection = collection;
     window.query = query;
     window.where = where;
@@ -103,55 +104,92 @@
   <script type="text/babel">
   const {useState,useEffect,useCallback,useRef,useMemo}=React;
 
-  const AuthContext = React.createContext({ user: null, loading: true });
+  const AuthContext = React.createContext({ user: null, loading: true, roomId: null, setRoomId: () => {} });
   function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [roomId, setRoomId] = useState(() => new URLSearchParams(window.location.search).get('room'));
+    const [pendingRoomInvite, setPendingRoomInvite] = useState(null);
+
     useEffect(() => {
       if (!window.auth) {
         setLoading(false);
         return;
       }
-      return window.onAuthStateChanged(window.auth, (u) => {
+      return window.onAuthStateChanged(window.auth, async (u) => {
         setUser(u);
         if (u && window.db) {
           window.setDoc(window.doc(window.db, "users", u.uid), {
-            email: u.email,
+            email: (u.email || "").toLowerCase(),
             displayName: u.displayName,
             photoURL: u.photoURL
           }, { merge: true }).catch(console.error);
-          
-          const roomId = new URLSearchParams(window.location.search).get('room');
-          if (!roomId) {
-            const q = window.query(window.collection(window.db, "rooms"), window.where("invited_uids", "array-contains", u.uid));
-            window.getDocs(q).then(snap => {
-              if (!snap.empty) {
-                const foundRoomId = snap.docs[0].id;
-                const ignored = loadLS("ww_ignored_rooms", []);
-                if (!ignored.includes(foundRoomId)) {
-                  const lang = loadLS("ww_lang", "he");
-                  if (confirm(lang === "he" ? "הוזמנת לחדר משותף ע\"י בן/בת הזוג. הצטרפות תסנכרן את הנתונים ותדרוס את הנתונים המקומיים שלך. להצטרף?" : "You have been invited to a shared room. Joining will sync data and overwrite your local data. Join?")) {
-                    const url = new URL(window.location);
-                    url.searchParams.set('room', foundRoomId);
-                    window.history.replaceState({}, '', url);
-                    window.location.reload();
-                  } else {
-                    saveLS("ww_ignored_rooms", [...ignored, foundRoomId]);
-                  }
-                }
+
+          const paramRoomId = new URLSearchParams(window.location.search).get('room');
+          if (paramRoomId) {
+            setRoomId(paramRoomId);
+          } else {
+            try {
+              const q = window.query(
+                window.collection(window.db, "rooms"),
+                window.where("invited_uids", "array-contains", u.uid)
+              );
+              const snap = await window.getDocs(q);
+              const activeDocs = snap.docs.filter(d => !d.data().scheduled_deletion);
+              if (activeDocs.length > 0) {
+                const autoRoomId = activeDocs[0].id;
+                setRoomId(autoRoomId);
+                const url = new URL(window.location);
+                url.searchParams.set('room', autoRoomId);
+                window.history.replaceState({}, '', url);
+              } else {
+                const newRoomId = crypto.randomUUID();
+                const initialRoom = {
+                  owner_uid: u.uid,
+                  invited_uids: [u.uid],
+                  ww_sleeps: loadLS("ww_sleeps", []),
+                  ww_feeds: loadLS("ww_feeds", []),
+                  ww_weights: loadLS("ww_weights", []),
+                  ww_babyname: loadLS("ww_babyname", ""),
+                  ww_date: loadLS("ww_date", ""),
+                  created_at: Date.now()
+                };
+                await window.setDoc(window.doc(window.db, "rooms", newRoomId), initialRoom);
+                setRoomId(newRoomId);
+                const url = new URL(window.location);
+                url.searchParams.set('room', newRoomId);
+                window.history.replaceState({}, '', url);
               }
-            }).catch(console.error);
+            } catch (e) {
+              console.error("Auto sync room resolution error:", e);
+            }
           }
         }
         setLoading(false);
       });
     }, []);
-    return <AuthContext.Provider value={{ user, loading }}>{children}</AuthContext.Provider>;
+
+    const acceptRoomInvite = () => {
+      if (!pendingRoomInvite) return;
+      const url = new URL(window.location);
+      url.searchParams.set('room', pendingRoomInvite);
+      window.history.replaceState({}, '', url);
+      setRoomId(pendingRoomInvite);
+      setPendingRoomInvite(null);
+    };
+    const declineRoomInvite = () => {
+      if (!pendingRoomInvite) return;
+      const ignored = loadLS("ww_ignored_rooms", []);
+      saveLS("ww_ignored_rooms", [...ignored, pendingRoomInvite]);
+      setPendingRoomInvite(null);
+    };
+
+    return <AuthContext.Provider value={{ user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite }}>{children}</AuthContext.Provider>;
   }
   function useAuth() { return React.useContext(AuthContext); }
 
   function useSyncState(key, initialValue) {
-    const roomId = new URLSearchParams(window.location.search).get('room');
+    const { roomId } = useAuth();
     const [state, setState] = useState(() => loadLS(key, initialValue));
 
     useEffect(() => {
@@ -185,8 +223,7 @@
   }
 
   function AuthGuard({ children }) {
-    const { user, loading } = useAuth();
-    const roomId = new URLSearchParams(window.location.search).get('room');
+    const { user, loading, roomId } = useAuth();
     const lang = loadLS("ww_lang", "he");
     const [accessStatus, setAccessStatus] = useState("pending");
     
@@ -199,44 +236,25 @@
         window.getDoc(window.doc(window.db, "rooms", roomId)).then(snap => {
           if (snap.exists()) {
             const data = snap.data();
-            if (data.invited_uids?.includes(user.uid)) {
+            if (data.invited_uids?.includes(user.uid) || data.owner_uid === user.uid) {
               setAccessStatus("granted");
             } else {
               setAccessStatus("denied");
             }
           } else {
-            // Room does not exist
-            setAccessStatus("denied");
+            setAccessStatus("granted");
           }
         }).catch(e => {
           console.error(e);
           setAccessStatus("denied");
         });
+      } else {
+        setAccessStatus("granted");
       }
     }, [user, roomId]);
 
-    if (!roomId) return children;
-    if (loading) return null;
-
-    if (!user) {
-      return (
-        <div style={{position:"fixed",inset:0,background:"#0a0f1e",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,color:"#fff",zIndex:9999}}>
-          <h2 style={{fontSize:22,marginBottom:12,fontWeight:800}}>{lang === "he" ? "חדר משותף" : "Shared Room"}</h2>
-          <p style={{fontSize:14,color:"#94a3b8",textAlign:"center",marginBottom:24,lineHeight:1.6}}>
-            {lang === "he" ? "הוזמנתם להצטרף לחדר משותף. עליכם להתחבר כדי להמשיך." : "You have been invited to a shared room. Please sign in to continue."}
-          </p>
-          <button onClick={() => {
-            if (!window.auth) return;
-            window.signInWithPopup(window.auth, new window.GoogleAuthProvider(), window.browserPopupRedirectResolver).catch(console.error);
-          }} 
-            style={{padding:"14px 24px",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",borderRadius:16,color:"#fff",fontWeight:800,fontSize:16,border:"none"}}>
-            🔑 {lang === "he" ? "התחבר עם גוגל" : "Sign in with Google"}
-          </button>
-        </div>
-      );
-    }
-    
-    if (accessStatus === "pending") return null;
+    if (!roomId || !user) return children;
+    if (loading || accessStatus === "pending") return null;
 
     if (accessStatus === "denied") {
       return (
@@ -648,15 +666,21 @@
     const onTS=e=>{startY.current=e.touches[0].clientY;dragging.current=true;};
     const onTM=e=>{if(!dragging.current)return;const d=e.touches[0].clientY-startY.current;if(d>0)setDragY(d);};
     const onTE=()=>{dragging.current=false;if(dragY>85){haptic(8);onClose();}setDragY(0);};
-    return(
-      <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end"}}>
+    // Rendered via portal straight onto <body> so this fixed-position sheet can
+    // never get trapped inside an ancestor's stacking/containing-block context
+    // (e.g. from a CSS transform/animation higher up in the tree) — that trapping
+    // was why the sheet's bottom content could end up rendering behind the fixed
+    // bottom nav bar instead of above it.
+    return ReactDOM.createPortal(
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end"}}>
         <div onClick={()=>{haptic(6);onClose();}} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(3px)",animation:"fadeUp .25s ease"}}/>
         <div onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
-          style={{position:"relative",width:"100%",maxWidth:480,margin:"0 auto",background:T.sheetBg,borderTopLeftRadius:26,borderTopRightRadius:26,padding:"10px 18px calc(22px + env(safe-area-inset-bottom,0px))",transform:`translateY(${dragY}px)`,transition:dragY?"none":"transform .35s cubic-bezier(.32,.72,0,1)",animation:dragY?undefined:"sheetUp .32s cubic-bezier(.32,.72,0,1)",boxShadow:"0 -20px 60px rgba(0,0,0,.5)",border:`1px solid ${T.surfaceB}`,borderBottom:"none"}}>
+          style={{position:"relative",width:"100%",maxWidth:480,margin:"0 auto",background:T.sheetBg,borderTopLeftRadius:26,borderTopRightRadius:26,padding:"10px 18px calc(38px + env(safe-area-inset-bottom,0px))",transform:`translateY(${dragY}px)`,transition:dragY?"none":"transform .35s cubic-bezier(.32,.72,0,1)",animation:dragY?undefined:"sheetUp .32s cubic-bezier(.32,.72,0,1)",boxShadow:"0 -20px 60px rgba(0,0,0,.5)",border:`1px solid ${T.surfaceB}`,borderBottom:"none",maxHeight:"85vh",overflowY:"auto"}}>
           <div style={{width:38,height:4,borderRadius:3,background:"rgba(128,128,128,.35)",margin:"4px auto 16px"}}/>
           {children}
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
@@ -1811,19 +1835,44 @@
     );
   }
 
+  // ─── TOAST (replaces native alert() for consistent in-app feedback) ────────
+  function Toast({message,type,onDone}){
+    useEffect(()=>{const t=setTimeout(onDone,2600);return()=>clearTimeout(t);},[]);
+    const isError=type==="error";
+    return(
+      <div style={{
+        position:"fixed",bottom:"calc(90px + env(safe-area-inset-bottom,0px))",left:16,right:16,zIndex:300,
+        maxWidth:448,margin:"0 auto",
+        background:isError?"linear-gradient(135deg,#ef4444,#dc2626)":"linear-gradient(135deg,#22c55e,#16a34a)",
+        color:"#fff",padding:"12px 16px",borderRadius:14,fontSize:13,fontWeight:700,textAlign:"center",
+        boxShadow:"0 8px 30px rgba(0,0,0,.35)",animation:"ww-toast-up .25s ease",
+      }}>{message}</div>
+    );
+  }
+
   function AccountBubble({ T, lang }) {
-    const { user, loading } = useAuth();
+    const { user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite } = useAuth();
     const [sheetOpen, setSheetOpen] = useState(false);
-    const roomId = new URLSearchParams(window.location.search).get('room');
-    
+
     const [inviteEmail, setInviteEmail] = useState("");
     const [searchResults, setSearchResults] = useState([]);
     const [searching, setSearching] = useState(false);
+    const [invitingId, setInvitingId] = useState(null);
+    const [removingId, setRemovingId] = useState(null);
+    const [toast, setToast] = useState(null);
+
+    const [roomInvitedUids, setRoomInvitedUids] = useState([]);
+    const [memberProfiles, setMemberProfiles] = useState({});
 
     useEffect(() => {
-      if (inviteEmail.length > 2 && window.db) {
-        setSearching(true);
-        const term = inviteEmail.toLowerCase();
+      if (inviteEmail.trim().length <= 2 || !window.db) {
+        setSearchResults([]);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
+      const handle = setTimeout(() => {
+        const term = inviteEmail.trim().toLowerCase();
         const q = window.query(
           window.collection(window.db, "users"),
           window.where("email", ">=", term),
@@ -1836,14 +1885,43 @@
           console.error(e);
           setSearching(false);
         });
-      } else {
-        setSearchResults([]);
-      }
+      }, 350);
+      return () => clearTimeout(handle);
     }, [inviteEmail]);
+
+    useEffect(() => {
+      if (!roomId || !window.db) { setRoomInvitedUids([]); return; }
+      const roomRef = window.doc(window.db, "rooms", roomId);
+      const unsub = window.onSnapshot(roomRef, snap => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setRoomInvitedUids(data.invited_uids || []);
+        }
+      });
+      return unsub;
+    }, [roomId]);
+
+    useEffect(() => {
+      const missing = roomInvitedUids.filter(uid => !memberProfiles[uid]);
+      if (!missing.length || !window.db) return;
+      Promise.all(missing.map(uid =>
+        window.getDoc(window.doc(window.db, "users", uid)).then(s => [uid, s.exists() ? s.data() : null])
+      )).then(results => {
+        setMemberProfiles(prev => {
+          const next = {...prev};
+          results.forEach(([uid,data]) => { if (data) next[uid] = data; });
+          return next;
+        });
+      });
+    }, [roomInvitedUids]);
+    const members = roomInvitedUids.map(uid => {
+      const profile = memberProfiles[uid] || {};
+      return { id: uid, ...profile, isSelf: user && uid === user.uid };
+    });
 
     const handleLogin = async () => {
       if (!window.auth) {
-        alert(lang === "he" ? "Firebase לא מוגדר. אנא הגדירו מפתחות בקוד." : "Firebase is not configured. Please set up API keys in the code.");
+        setToast({message: lang === "he" ? "Firebase לא מוגדר. אנא הגדירו מפתחות בקוד." : "Firebase is not configured. Please set up API keys in the code.", type:"error"});
         return;
       }
       try {
@@ -1867,24 +1945,11 @@
 
     const handleInviteUser = async (targetUser) => {
       haptic(10);
-      let currentRoomId = roomId;
-      if (!currentRoomId) {
-        if (!user || !window.db) return;
-        currentRoomId = crypto.randomUUID();
-        const state = {
-          owner_uid: user.uid,
-          ww_sleeps: loadLS("ww_sleeps", []),
-          ww_feeds: loadLS("ww_feeds", []),
-          ww_weights: loadLS("ww_weights", []),
-          invited_uids: [user.uid, targetUser.id]
-        };
-        const url = new URL(window.location);
-        url.searchParams.set('room', currentRoomId);
-        window.history.pushState({}, '', url);
-        await window.setDoc(window.doc(window.db, "rooms", currentRoomId), state);
-        alert(lang === "he" ? "השותף הוזמן בהצלחה! בפעם הבאה שיתחבר, יצורף אוטומטית לחדר." : "Partner invited successfully! Next time they log in, they will automatically join the room.");
-        window.location.reload();
-      } else {
+      setInvitingId(targetUser.id);
+      try {
+        let currentRoomId = roomId;
+        if (!currentRoomId || !user || !window.db) return;
+        
         const roomRef = window.doc(window.db, "rooms", currentRoomId);
         const snap = await window.getDoc(roomRef);
         if (snap.exists()) {
@@ -1894,8 +1959,80 @@
             await window.setDoc(roomRef, { invited_uids: [...uids, targetUser.id] }, { merge: true });
           }
         }
-        alert(lang === "he" ? "השותף הוזמן בהצלחה!" : "Partner invited successfully!");
+
+        const qTarget = window.query(
+          window.collection(window.db, "rooms"),
+          window.where("owner_uid", "==", targetUser.id)
+        );
+        const targetSnap = await window.getDocs(qTarget);
+        targetSnap.forEach(async (docSnap) => {
+          const d = docSnap.data();
+          if ((d.invited_uids || []).length <= 1 && !d.scheduled_deletion) {
+            await window.setDoc(docSnap.ref, { scheduled_deletion: Date.now() + 30 * 24 * 60 * 60 * 1000 }, { merge: true });
+          }
+        });
+
+        setToast({message: lang === "he" ? "השותף הוזמן בהצלחה!" : "Partner invited successfully!", type:"success"});
         setInviteEmail("");
+      } catch (e) {
+        console.error(e);
+        setToast({message: lang === "he" ? "ההזמנה נכשלה" : "Invite failed", type:"error"});
+      } finally {
+        setInvitingId(null);
+      }
+    };
+
+    const handleRemoveMember = async (uid) => {
+      if (!window.db || !roomId || !user) return;
+      haptic(10);
+      setRemovingId(uid);
+      try {
+        const roomRef = window.doc(window.db, "rooms", roomId);
+        const snap = await window.getDoc(roomRef);
+        const currentData = snap.exists() ? snap.data() : {};
+        const existingUids = currentData.invited_uids || [];
+        const updatedUids = existingUids.filter(id => id !== uid);
+
+        await window.setDoc(roomRef, { invited_uids: updatedUids }, { merge: true });
+
+        if (uid === user.uid) {
+          const qSched = window.query(
+            window.collection(window.db, "rooms"),
+            window.where("owner_uid", "==", uid)
+          );
+          const schedSnap = await window.getDocs(qSched);
+          schedSnap.forEach(async (docSnap) => {
+            if (docSnap.data().scheduled_deletion && docSnap.id !== roomId) {
+              await window.deleteDoc(docSnap.ref).catch(console.error);
+            }
+          });
+
+          const newPrivateRoomId = crypto.randomUUID();
+          const newState = {
+            owner_uid: uid,
+            invited_uids: [uid],
+            ww_sleeps: currentData.ww_sleeps || loadLS("ww_sleeps", []),
+            ww_feeds: currentData.ww_feeds || loadLS("ww_feeds", []),
+            ww_weights: currentData.ww_weights || loadLS("ww_weights", []),
+            ww_babyname: currentData.ww_babyname || loadLS("ww_babyname", ""),
+            ww_date: currentData.ww_date || loadLS("ww_date", ""),
+            created_at: Date.now()
+          };
+          await window.setDoc(window.doc(window.db, "rooms", newPrivateRoomId), newState);
+
+          setRoomId(newPrivateRoomId);
+          const url = new URL(window.location);
+          url.searchParams.set('room', newPrivateRoomId);
+          window.history.replaceState({}, '', url);
+          setToast({message: lang === "he" ? "יצאת מהחדר המשותף. נוצר עבורך חדר פרטי חדש." : "Left shared room. Created new private room for you.", type:"success"});
+        } else {
+          setToast({message: lang === "he" ? "השותף הוסר" : "Member removed", type:"success"});
+        }
+      } catch (e) {
+        console.error(e);
+        setToast({message: lang === "he" ? "הפעולה נכשלה" : "Operation failed", type:"error"});
+      } finally {
+        setRemovingId(null);
       }
     };
 
@@ -1931,18 +2068,47 @@
             <div style={{minWidth:0,flex:1}}>
               <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.displayName||user.email}</div>
               {roomId
-                ?<div style={{fontSize:11,color:"#4ade80",fontWeight:600}}>● {lang==="he"?"מחובר לחדר משותף":"Connected to shared room"}</div>
+                ?(roomInvitedUids.length > 1
+                    ?<div style={{fontSize:11,color:"#4ade80",fontWeight:600}}>● {lang==="he"?"מחובר לחדר משותף":"Connected to shared room"}</div>
+                    :<div style={{fontSize:11,color:"#38bdf8",fontWeight:600}}>☁️ {lang==="he"?"מחובר ומסונכרן לענן":"Logged in & Synced to Cloud"}</div>)
                 :<div style={{fontSize:11,color:T.sub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</div>}
             </div>
           </div>
-          
+
+          {roomId && members.length > 0 && (
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:8}}>{lang==="he"?"משתמשים בחדר":"Room Members"}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {members.map(m=>{
+                  const mInitial=(m.displayName||m.email||"?").trim().charAt(0).toUpperCase();
+                  return(
+                    <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.surface2,borderRadius:11}}>
+                      {m.photoURL
+                        ?<img src={m.photoURL} alt="" referrerPolicy="no-referrer" style={{width:32,height:32,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+                        :<div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,fontWeight:800,flexShrink:0}}>{mInitial}</div>}
+                      <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {m.displayName||m.email||"…"}{m.isSelf?(lang==="he"?" (את/ה)":" (you)"):""}
+                      </div>
+                      {(!m.isSelf || roomInvitedUids.length > 1) && (
+                        <button onClick={()=>handleRemoveMember(m.id)} disabled={removingId===m.id} style={{padding:"5px 10px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:"#ef4444",fontSize:11,fontWeight:700,flexShrink:0,opacity:removingId===m.id?.5:1}}>
+                          {removingId===m.id?"…":(m.isSelf?(lang==="he"?"עזוב":"Leave"):(lang==="he"?"הסר":"Remove"))}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div style={{marginBottom: 16}}>
             <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:6}}>{lang === "he" ? "הזמן באמצעות אימייל" : "Invite by Email"}</div>
             <input type="email" placeholder={lang === "he" ? "הזן אימייל של שותף..." : "Enter partner's email..."}
               value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-              style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:12,color:T.inputText,fontSize:14,outline:"none",marginBottom:8}}/>
-            
-            {inviteEmail.length > 2 && (
+              dir="ltr" autoCapitalize="none" autoCorrect="off" autoComplete="email" spellCheck="false"
+              style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:12,color:T.inputText,fontSize:14,outline:"none",marginBottom:8,textAlign:lang==="he"?"right":"left"}}/>
+
+            {inviteEmail.trim().length > 2 && (
               <div style={{background:T.surface2, borderRadius:12, overflow:"hidden", border:`1px solid ${T.surface2B}`}}>
                 {searching && <div style={{padding:10, fontSize:12, color:T.sub, textAlign:"center"}}>{lang === "he" ? "מחפש..." : "Searching..."}</div>}
                 {!searching && searchResults.length === 0 && (
@@ -1961,24 +2127,36 @@
                         });
                       } else {
                         navigator.clipboard.writeText(shareUrl);
-                        alert(lang === "he" ? "הקישור הועתק ללוח" : "Link copied to clipboard");
+                        setToast({message: lang === "he" ? "הקישור הועתק ללוח" : "Link copied to clipboard", type:"success"});
                       }
                     }} style={{padding:"8px 16px", background:T.surface, color:T.text, borderRadius:8, fontSize:12, fontWeight:700, border:`1px solid ${T.surfaceB}`}}>
                       🔗 {lang === "he" ? "שלח קישור לאפליקציה" : "Send App Link"}
                     </button>
                   </div>
                 )}
-                {!searching && searchResults.map(u => (
-                  <div key={u.id} style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", borderBottom:`1px solid ${T.surface2B}`}}>
-                    <div style={{display:"flex", alignItems:"center", gap:8}}>
-                      {u.photoURL ? <img src={u.photoURL} alt="" style={{width:30,height:30,borderRadius:"50%",objectFit:"cover"}}/> : <div style={{width:30,height:30,borderRadius:"50%",background:T.accentBg,color:T.accentText,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800}}>{u.email.charAt(0).toUpperCase()}</div>}
-                      <div style={{fontSize:13, color:T.text, fontWeight:600}}>{u.email}</div>
+                {!searching && searchResults.map(u => {
+                  const isSelf = user && u.id === user.uid;
+                  const alreadyAdded = roomId && roomInvitedUids.includes(u.id);
+                  return(
+                    <div key={u.id} style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", borderBottom:`1px solid ${T.surface2B}`}}>
+                      <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0}}>
+                        {u.photoURL ? <img src={u.photoURL} alt="" referrerPolicy="no-referrer" style={{width:30,height:30,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/> : <div style={{width:30,height:30,borderRadius:"50%",background:T.accentBg,color:T.accentText,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{(u.email||"?").charAt(0).toUpperCase()}</div>}
+                        <div style={{fontSize:13, color:T.text, fontWeight:600, overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {u.email} {isSelf && <span style={{fontSize:11, color:T.sub, fontWeight:500, marginInlineStart:4}}>{lang==="he"?"(את/ה)":"(You)"}</span>}
+                        </div>
+                      </div>
+                      {isSelf ? (
+                        <span style={{fontSize:11,color:T.sub,fontWeight:700,flexShrink:0,marginInlineStart:8}}>{lang==="he"?"(את/ה)":"(You)"}</span>
+                      ) : alreadyAdded ? (
+                        <span style={{fontSize:11,color:"#4ade80",fontWeight:700,flexShrink:0,marginInlineStart:8}}>✓ {lang==="he"?"כבר נוסף":"Added"}</span>
+                      ) : (
+                        <button onClick={() => handleInviteUser(u)} disabled={invitingId===u.id} style={{padding:"6px 12px", background:T.accentBg, color:T.accentText, borderRadius:8, fontSize:12, fontWeight:700, border:"none", flexShrink:0, marginInlineStart:8, opacity:invitingId===u.id?.6:1}}>
+                          {invitingId===u.id ? "…" : (lang === "he" ? "הזמן" : "Invite")}
+                        </button>
+                      )}
                     </div>
-                    <button onClick={() => handleInviteUser(u)} style={{padding:"6px 12px", background:T.accentBg, color:T.accentText, borderRadius:8, fontSize:12, fontWeight:700, border:"none"}}>
-                      {lang === "he" ? "הזמן" : "Invite"}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1995,8 +2173,11 @@
           </button>
         </>)}
       </BottomSheet>
+
+      {toast && <Toast message={toast.message} type={toast.type} onDone={()=>setToast(null)}/>}
     </>;
   }
+
 
   // ─── SETTINGS TAB ────────────────────────────────────────────────────────────
   function SettingsTab({T,S,lang,setLang,isDark,toggleTheme,birthDate,setBirthDate,babyName,setBabyName,installPrompt,installed,doInstall}){
@@ -2105,8 +2286,8 @@
   function App(){
     const[isDark,setIsDark]=useState(()=>{const d=localStorage.getItem("ww_theme")!=="light";document.body.style.background=d?"#0a0f1e":"#faf8f5";return d;});
     const[lang,setLang]=useState(()=>loadLS("ww_lang","he"));
-    const[birthDate,setBirthDate]=useState(()=>localStorage.getItem("ww_date")||"");
-    const[babyName,setBabyName]=useState(()=>localStorage.getItem("ww_babyname")||"");
+    const[birthDate,setBirthDate]=useSyncState("ww_date","");
+    const[babyName,setBabyName]=useSyncState("ww_babyname","");
     const[sunTimes,setSunTimes]=useState(()=>loadLS("ww_suntimes",null));
     useEffect(()=>{
       if(!navigator.geolocation)return;
@@ -2158,6 +2339,7 @@
         @keyframes sl{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:translateX(0)}}
         @keyframes sr{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
         @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+        @keyframes ww-toast-up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
         @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
         input[type=date]{color-scheme:${T.ds}}
         button{transition:transform .18s cubic-bezier(.34,1.56,.64,1),opacity .15s}
