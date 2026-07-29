@@ -183,7 +183,9 @@
       setPendingRoomInvite(null);
     };
 
-    return <AuthContext.Provider value={{ user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite }}>{children}</AuthContext.Provider>;
+    return <AuthContext.Provider value={{ user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite }}>
+      {children}
+    </AuthContext.Provider>;
   }
   function useAuth() { return React.useContext(AuthContext); }
 
@@ -224,20 +226,22 @@
   }
 
   function useSyncState(key, initialValue) {
-    const { roomId } = useAuth();
+    const { roomId, user } = useAuth();
     const [state, setState] = useState(() => loadLS(key, initialValue));
 
     useEffect(() => {
-      const handleCustomSync = () => {
+      const handleLocalRestored = () => {
         const localVal = loadLS(key, initialValue);
         setState(localVal);
       };
-      window.addEventListener('ww_local_data_restored', handleCustomSync);
-      return () => window.removeEventListener('ww_local_data_restored', handleCustomSync);
+      window.addEventListener('ww_local_data_restored', handleLocalRestored);
+      return () => {
+        window.removeEventListener('ww_local_data_restored', handleLocalRestored);
+      };
     }, [key, initialValue]);
 
     useEffect(() => {
-      if (!roomId || !window.db) return;
+      if (!roomId || !user || !window.db) return;
 
       const roomRef = window.doc(window.db, "rooms", roomId);
       const unsubscribe = window.onSnapshot(roomRef, (docSnap) => {
@@ -285,14 +289,14 @@
       });
 
       return () => unsubscribe();
-    }, [roomId, key, initialValue]);
+    }, [roomId, user?.uid, key, initialValue]);
 
     const setSyncedState = useCallback((newValue) => {
       setState(prev => {
         const updated = typeof newValue === 'function' ? newValue(prev) : newValue;
         saveLS(key, updated);
 
-        if (roomId && window.db) {
+        if (roomId && user && window.db) {
           const roomRef = window.doc(window.db, "rooms", roomId);
           const payload = { [key]: updated };
 
@@ -319,7 +323,7 @@
         }
         return updated;
       });
-    }, [roomId, key]);
+    }, [roomId, user?.uid, key]);
 
     return [state, setSyncedState];
   }
