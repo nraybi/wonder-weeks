@@ -132,7 +132,7 @@
             try {
               const q = window.query(
                 window.collection(window.db, "rooms"),
-                window.where("invited_uids", "array-contains", u.uid)
+                window.where("members", "array-contains", u.uid)
               );
               const snap = await window.getDocs(q);
               const activeDocs = snap.docs.filter(d => !d.data().scheduled_deletion);
@@ -145,8 +145,7 @@
               } else {
                 const newRoomId = crypto.randomUUID();
                 const initialRoom = {
-                  owner_uid: u.uid,
-                  invited_uids: [u.uid],
+                  members: [u.uid],
                   ww_sleeps: loadLS("ww_sleeps", []),
                   ww_feeds: loadLS("ww_feeds", []),
                   ww_weights: loadLS("ww_weights", []),
@@ -339,7 +338,7 @@
         window.getDoc(window.doc(window.db, "rooms", roomId)).then(snap => {
           if (snap.exists()) {
             const data = snap.data();
-            if (data.invited_uids?.includes(user.uid) || data.owner_uid === user.uid) {
+            if (data.members?.includes(user.uid)) {
               setAccessStatus("granted");
             } else {
               setAccessStatus("denied");
@@ -2009,7 +2008,7 @@
     const [removingId, setRemovingId] = useState(null);
     const [toast, setToast] = useState(null);
 
-    const [roomInvitedUids, setRoomInvitedUids] = useState([]);
+    const [roomMembers, setRoomMembers] = useState([]);
     const [memberProfiles, setMemberProfiles] = useState({});
 
     useEffect(() => {
@@ -2038,19 +2037,19 @@
     }, [inviteEmail]);
 
     useEffect(() => {
-      if (!roomId || !window.db) { setRoomInvitedUids([]); return; }
+      if (!roomId || !window.db) { setRoomMembers([]); return; }
       const roomRef = window.doc(window.db, "rooms", roomId);
       const unsub = window.onSnapshot(roomRef, snap => {
         if (snap.exists()) {
           const data = snap.data();
-          setRoomInvitedUids(data.invited_uids || []);
+          setRoomMembers(data.members || []);
         }
       });
       return unsub;
     }, [roomId]);
 
     useEffect(() => {
-      const missing = roomInvitedUids.filter(uid => !memberProfiles[uid]);
+      const missing = roomMembers.filter(uid => !memberProfiles[uid]);
       if (!missing.length || !window.db) return;
       Promise.all(missing.map(uid =>
         window.getDoc(window.doc(window.db, "users", uid)).then(s => [uid, s.exists() ? s.data() : null])
@@ -2061,8 +2060,8 @@
           return next;
         });
       });
-    }, [roomInvitedUids]);
-    const members = roomInvitedUids.map(uid => {
+    }, [roomMembers]);
+    const members = roomMembers.map(uid => {
       const profile = memberProfiles[uid] || {};
       return { id: uid, ...profile, isSelf: user && uid === user.uid };
     });
@@ -2102,20 +2101,20 @@
         const snap = await window.getDoc(roomRef);
         if (snap.exists()) {
           const data = snap.data();
-          const uids = data.invited_uids || [];
+          const uids = data.members || [];
           if (!uids.includes(targetUser.id)) {
-            await window.setDoc(roomRef, { invited_uids: [...uids, targetUser.id] }, { merge: true });
+            await window.setDoc(roomRef, { members: [...uids, targetUser.id] }, { merge: true });
           }
         }
 
         const qTarget = window.query(
           window.collection(window.db, "rooms"),
-          window.where("owner_uid", "==", targetUser.id)
+          window.where("members", "array-contains", targetUser.id)
         );
         const targetSnap = await window.getDocs(qTarget);
         targetSnap.forEach(async (docSnap) => {
           const d = docSnap.data();
-          if ((d.invited_uids || []).length <= 1 && !d.scheduled_deletion) {
+          if ((d.members || []).length <= 1 && !d.scheduled_deletion) {
             await window.setDoc(docSnap.ref, { scheduled_deletion: Date.now() + 30 * 24 * 60 * 60 * 1000 }, { merge: true });
           }
         });
@@ -2138,15 +2137,15 @@
         const roomRef = window.doc(window.db, "rooms", roomId);
         const snap = await window.getDoc(roomRef);
         const currentData = snap.exists() ? snap.data() : {};
-        const existingUids = currentData.invited_uids || [];
+        const existingUids = currentData.members || [];
         const updatedUids = existingUids.filter(id => id !== uid);
 
-        await window.setDoc(roomRef, { invited_uids: updatedUids }, { merge: true });
+        await window.setDoc(roomRef, { members: updatedUids }, { merge: true });
 
         if (uid === user.uid) {
           const qSched = window.query(
             window.collection(window.db, "rooms"),
-            window.where("owner_uid", "==", uid)
+            window.where("members", "array-contains", uid)
           );
           const schedSnap = await window.getDocs(qSched);
           schedSnap.forEach(async (docSnap) => {
@@ -2157,8 +2156,7 @@
 
           const newPrivateRoomId = crypto.randomUUID();
           const newState = {
-            owner_uid: uid,
-            invited_uids: [uid],
+            members: [uid],
             ww_sleeps: currentData.ww_sleeps || loadLS("ww_sleeps", []),
             ww_feeds: currentData.ww_feeds || loadLS("ww_feeds", []),
             ww_weights: currentData.ww_weights || loadLS("ww_weights", []),
@@ -2216,7 +2214,7 @@
             <div style={{minWidth:0,flex:1}}>
               <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.displayName||user.email}</div>
               {roomId
-                ?(roomInvitedUids.length > 1
+                ?(roomMembers.length > 1
                     ?<div style={{fontSize:11,color:"#4ade80",fontWeight:600}}>● {lang==="he"?"מחובר לחדר משותף":"Connected to shared room"}</div>
                     :<div style={{fontSize:11,color:"#38bdf8",fontWeight:600}}>☁️ {lang==="he"?"מחובר ומסונכרן לענן":"Logged in & Synced to Cloud"}</div>)
                 :<div style={{fontSize:11,color:T.sub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</div>}
@@ -2237,7 +2235,7 @@
                       <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         {m.displayName||m.email||"…"}{m.isSelf?(lang==="he"?" (את/ה)":" (you)"):""}
                       </div>
-                      {(!m.isSelf || roomInvitedUids.length > 1) && (
+                      {(!m.isSelf || roomMembers.length > 1) && (
                         <button onClick={()=>handleRemoveMember(m.id)} disabled={removingId===m.id} style={{padding:"5px 10px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:"#ef4444",fontSize:11,fontWeight:700,flexShrink:0,opacity:removingId===m.id?.5:1}}>
                           {removingId===m.id?"…":(m.isSelf?(lang==="he"?"עזוב":"Leave"):(lang==="he"?"הסר":"Remove"))}
                         </button>
@@ -2284,7 +2282,7 @@
                 )}
                 {!searching && searchResults.map(u => {
                   const isSelf = user && u.id === user.uid;
-                  const alreadyAdded = roomId && roomInvitedUids.includes(u.id);
+                  const alreadyAdded = roomId && roomMembers.includes(u.id);
                   return(
                     <div key={u.id} style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", borderBottom:`1px solid ${T.surface2B}`}}>
                       <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0}}>
