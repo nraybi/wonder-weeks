@@ -193,7 +193,7 @@
     const mergedMap = new Map();
     const getItemTime = (item) => {
       if (!item) return 0;
-      return item.updatedAt || item.end || item.start || item.date || item.id || 0;
+      return item.updatedAt || item.start || item.date || item.id || 0;
     };
 
     for (const item of (cloudList || [])) {
@@ -216,19 +216,8 @@
         const cloudTime = getItemTime(existing);
         if (localTime > cloudTime) {
           mergedMap.set(strId, item);
-        } else if (cloudTime > localTime) {
-          mergedMap.set(strId, existing);
-        } else {
-          const merged = { ...item, ...existing };
-          if (existing.end && !item.end) {
-            merged.end = existing.end;
-          } else if (item.end && !existing.end) {
-            merged.end = item.end;
-          }
-          if (existing.updatedAt || item.updatedAt) {
-            merged.updatedAt = Math.max(existing.updatedAt || 0, item.updatedAt || 0);
-          }
-          mergedMap.set(strId, merged);
+        } else if (localTime === cloudTime) {
+          mergedMap.set(strId, { ...existing, ...item });
         }
       }
     }
@@ -249,7 +238,7 @@
       return () => {
         window.removeEventListener('ww_local_data_restored', handleLocalRestored);
       };
-    }, [key, initialValue]);
+    }, [key]);
 
     useEffect(() => {
       if (!roomId || !user || !window.db) return;
@@ -300,7 +289,7 @@
       });
 
       return () => unsubscribe();
-    }, [roomId, user?.uid, key, initialValue]);
+    }, [roomId, user?.uid, key]);
 
     const setSyncedState = useCallback((newValue) => {
       setState(prev => {
@@ -1344,9 +1333,8 @@
 
     const toggleSleep=()=>{
       haptic(activeSleep?12:15);
-      const nowTs=Date.now();
-      if(activeSleep)setSleeps(prev=>prev.map(s=>s.id===activeSleep.id?{...s,end:nowTs,updatedAt:nowTs}:s));
-      else setSleeps(prev=>[...prev,{id:nowTs,start:nowTs,end:null,updatedAt:nowTs}]);
+      if(activeSleep)setSleeps(prev=>prev.map(s=>s.id===activeSleep.id?{...s,end:Date.now(),updatedAt:Date.now()}:s));
+      else setSleeps(prev=>[...prev,{id:Date.now(),start:Date.now(),end:null,updatedAt:Date.now()}]);
     };
     const deleteSleep=id=>setSleeps(prev=>prev.filter(s=>s.id!==id));
     const recentSleeps=[...sleeps].filter(s=>s.start>=todayStart-13*86400000).sort((a,b)=>b.start-a.start).slice(0,500);
@@ -1371,10 +1359,9 @@
     };
     const saveEditSleep=()=>{
       haptic(12);
-      const nowTs=Date.now();
       const startTs=dateTimeToTs(editStartDate,editStartTime);
       const endTs=hasEnd?dateTimeToTs(editEndDate,editEndTime):null;
-      setSleeps(prev=>prev.map(s=>s.id===editId?{...s,start:startTs,end:(hasEnd&&endTs>startTs)?endTs:(hasEnd?s.end:null),updatedAt:nowTs}:s));
+      setSleeps(prev=>prev.map(s=>s.id===editId?{...s,start:startTs,end:(hasEnd&&endTs>startTs)?endTs:(hasEnd?s.end:null),updatedAt:Date.now()}:s));
       setEditSheetOpen(false);
     };
     const deleteFromEditSheet=()=>{haptic(15);setSleeps(prev=>prev.filter(s=>s.id!==editId));setEditSheetOpen(false);};
@@ -1541,13 +1528,12 @@
     };
     const saveFeed=()=>{
       haptic(15);
-      const nowTs=Date.now();
       const ts=dateTimeToTs(feedDate,feedTimeOnly);
       const amt=feedAmt?parseInt(feedAmt):null;
       const prep=feedPrepared?parseInt(feedPrepared):null;
       const note=feedNote.trim()?feedNote.trim():null;
-      if(editingId)setFeeds(prev=>prev.map(f=>f.id===editingId?{...f,type:feedType,amount:amt,prepared:prep,note,start:ts,updatedAt:nowTs}:f));
-      else setFeeds(prev=>[...prev,{id:nowTs,start:ts,type:feedType,amount:amt,prepared:prep,note,updatedAt:nowTs}]);
+      if(editingId)setFeeds(prev=>prev.map(f=>f.id===editingId?{...f,type:feedType,amount:amt,prepared:prep,note,start:ts,updatedAt:Date.now()}:f));
+      else setFeeds(prev=>[...prev,{id:Date.now(),start:ts,type:feedType,amount:amt,prepared:prep,note,updatedAt:Date.now()}]);
       setSheetOpen(false);
     };
     const deleteFeed=id=>setFeeds(prev=>prev.filter(f=>f.id!==id));
@@ -1722,11 +1708,10 @@
     const save=()=>{
       if(!wKg)return;
       haptic(15);
-      const nowTs=Date.now();
       const kg=parseFloat(wKg);
       const ts=new Date(wDate+"T12:00").getTime();
-      if(editingId)setWeights(prev=>prev.map(w=>w.id===editingId?{...w,kg,date:ts,updatedAt:nowTs}:w));
-      else setWeights(prev=>[...prev,{id:nowTs,kg,date:ts,updatedAt:nowTs}]);
+      if(editingId)setWeights(prev=>prev.map(w=>w.id===editingId?{...w,kg,date:ts,updatedAt:Date.now()}:w));
+      else setWeights(prev=>[...prev,{id:Date.now(),kg,date:ts,updatedAt:Date.now()}]);
       setSheetOpen(false);
     };
     const del=id=>setWeights(prev=>prev.filter(w=>w.id!==id));
@@ -1823,235 +1808,14 @@
     return(s||"").trim().replace(/[^a-zA-Z0-9\u0590-\u05FF_-]+/g,"-").replace(/^-+|-+$/g,"")||"";
   }
 
-  // ─── BACKUP CODE ENCODE/DECODE (Compact Bitpacked v2 + Legacy v1 Fallback) ──
-  function uint8ToBase64(bytes) {
-    let binary = "";
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+  // ─── BACKUP CODE ENCODE/DECODE (UTF-8 safe base64) ──────────────────────────
+  function encodeBackup(state){
+    const json=JSON.stringify(state);
+    return btoa(unescape(encodeURIComponent(json)));
   }
-
-  function base64ToUint8(base64) {
-    const binary = atob(base64);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-  }
-
-  function encodeBackup(state) {
-    try {
-      const encoder = new TextEncoder();
-      const buf = [];
-      buf.push(2); // Format version 2
-
-      // Baby Name
-      const nameBytes = encoder.encode(state.babyName || "");
-      const nameLen = Math.min(255, nameBytes.length);
-      buf.push(nameLen);
-      for (let i = 0; i < nameLen; i++) buf.push(nameBytes[i]);
-
-      // Birth Date (YYYY-MM-DD)
-      const dob = state.birthDate || "";
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
-        const parts = dob.split("-").map(Number);
-        buf.push(Math.max(0, Math.min(255, parts[0] - 2020)));
-        buf.push(parts[1]);
-        buf.push(parts[2]);
-      } else {
-        buf.push(0, 0, 0);
-      }
-
-      // Base timestamp (midnight UTC of birthDate or fallback to 2025-01-01)
-      const baseMs = dob ? new Date(dob + "T00:00:00Z").getTime() : new Date("2025-01-01T00:00:00Z").getTime();
-
-      // Sleeps
-      const sleeps = state.sleeps || [];
-      const sleepCount = Math.min(65535, sleeps.length);
-      buf.push((sleepCount >> 8) & 0xff, sleepCount & 0xff);
-
-      for (let i = 0; i < sleepCount; i++) {
-        const s = sleeps[i];
-        const startMin = Math.max(0, Math.floor(((s.start || s.id || 0) - baseMs) / 60000));
-        const durMin = s.end ? Math.max(0, Math.floor((s.end - s.start) / 60000)) : 0xffff;
-
-        buf.push((startMin >> 16) & 0xff, (startMin >> 8) & 0xff, startMin & 0xff);
-        buf.push((durMin >> 8) & 0xff, durMin & 0xff);
-      }
-
-      // Feeds
-      const feeds = state.feeds || [];
-      const feedCount = Math.min(65535, feeds.length);
-      buf.push((feedCount >> 8) & 0xff, feedCount & 0xff);
-
-      const typeMap = { breast: 0, bottle: 1, solid: 2, other: 3 };
-
-      for (let i = 0; i < feedCount; i++) {
-        const f = feeds[i];
-        const startMin = Math.max(0, Math.floor(((f.start || f.id || 0) - baseMs) / 60000));
-        const typeCode = typeMap[f.type] || 0;
-
-        const prep = Math.min(65535, Math.round(f.prepared || 0));
-        const noteBytes = f.note ? encoder.encode(f.note) : new Uint8Array(0);
-        const hasNote = noteBytes.length > 0 ? 1 : 0;
-        const hasPrep = prep > 0 ? 1 : 0;
-
-        const flags = (typeCode << 6) | (hasPrep << 5) | (hasNote << 4);
-
-        buf.push((startMin >> 16) & 0xff, (startMin >> 8) & 0xff, startMin & 0xff);
-        buf.push(flags);
-
-        const amt = Math.min(65535, Math.round(f.amount || 0));
-        buf.push((amt >> 8) & 0xff, amt & 0xff);
-
-        if (hasPrep) {
-          buf.push((prep >> 8) & 0xff, prep & 0xff);
-        }
-        if (hasNote) {
-          const nLen = Math.min(255, noteBytes.length);
-          buf.push(nLen);
-          for (let j = 0; j < nLen; j++) buf.push(noteBytes[j]);
-        }
-      }
-
-      // Weights
-      const weights = state.weights || [];
-      const weightCount = Math.min(255, weights.length);
-      buf.push(weightCount);
-
-      for (let i = 0; i < weightCount; i++) {
-        const w = weights[i];
-        const dayOffset = Math.max(0, Math.floor(((w.date || w.id || 0) - baseMs) / 86400000));
-        const grams = Math.min(65535, Math.round((w.kg || 0) * 1000));
-
-        buf.push((dayOffset >> 8) & 0xff, dayOffset & 0xff);
-        buf.push((grams >> 8) & 0xff, grams & 0xff);
-      }
-
-      return "v2:" + uint8ToBase64(new Uint8Array(buf));
-    } catch(err) {
-      console.warn("Falling back to JSON backup:", err);
-      return btoa(unescape(encodeURIComponent(JSON.stringify(state))));
-    }
-  }
-
-  function decodeBackup(code) {
-    const str = (code || "").trim();
-    if (!str.startsWith("v2:")) {
-      const json = decodeURIComponent(escape(atob(str)));
-      return JSON.parse(json);
-    }
-
-    const bytes = base64ToUint8(str.substring(3));
-    let idx = 0;
-
-    const version = bytes[idx++];
-    if (version !== 2) throw new Error("Unsupported backup version");
-
-    const decoder = new TextDecoder();
-
-    // Baby Name
-    const nameLen = bytes[idx++];
-    const nameBytes = bytes.subarray(idx, idx + nameLen);
-    idx += nameLen;
-    const babyName = decoder.decode(nameBytes);
-
-    // Birth Date
-    const yOff = bytes[idx++];
-    const m = bytes[idx++];
-    const d = bytes[idx++];
-    let birthDate = "";
-    if (yOff > 0 || m > 0 || d > 0) {
-      const y = 2020 + yOff;
-      birthDate = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    }
-
-    const baseMs = birthDate ? new Date(birthDate + "T00:00:00Z").getTime() : new Date("2025-01-01T00:00:00Z").getTime();
-
-    // Sleeps
-    const sleepCount = (bytes[idx++] << 8) | bytes[idx++];
-    const sleeps = [];
-    for (let i = 0; i < sleepCount; i++) {
-      const startMin = (bytes[idx++] << 16) | (bytes[idx++] << 8) | bytes[idx++];
-      const durMin = (bytes[idx++] << 8) | bytes[idx++];
-
-      const startTs = baseMs + startMin * 60000;
-      const endTs = durMin === 0xffff ? null : startTs + durMin * 60000;
-
-      sleeps.push({
-        id: startTs,
-        start: startTs,
-        end: endTs,
-        updatedAt: startTs
-      });
-    }
-
-    // Feeds
-    const feedCount = (bytes[idx++] << 8) | bytes[idx++];
-    const feeds = [];
-    const typeMap = ["breast", "bottle", "solid", "other"];
-
-    for (let i = 0; i < feedCount; i++) {
-      const startMin = (bytes[idx++] << 16) | (bytes[idx++] << 8) | bytes[idx++];
-      const flags = bytes[idx++];
-      const typeCode = (flags >> 6) & 0x03;
-      const hasPrep = (flags >> 5) & 0x01;
-      const hasNote = (flags >> 4) & 0x01;
-
-      const amt = (bytes[idx++] << 8) | bytes[idx++];
-      let prep = null;
-      if (hasPrep) {
-        prep = (bytes[idx++] << 8) | bytes[idx++];
-      }
-
-      let note = null;
-      if (hasNote) {
-        const nLen = bytes[idx++];
-        const nBytes = bytes.subarray(idx, idx + nLen);
-        idx += nLen;
-        note = decoder.decode(nBytes);
-      }
-
-      const startTs = baseMs + startMin * 60000;
-      feeds.push({
-        id: startTs,
-        start: startTs,
-        type: typeMap[typeCode] || "breast",
-        amount: amt > 0 ? amt : null,
-        prepared: prep,
-        note: note,
-        updatedAt: startTs
-      });
-    }
-
-    // Weights
-    const weightCount = bytes[idx++];
-    const weights = [];
-    for (let i = 0; i < weightCount; i++) {
-      const dayOffset = (bytes[idx++] << 8) | bytes[idx++];
-      const grams = (bytes[idx++] << 8) | bytes[idx++];
-
-      const dateTs = baseMs + dayOffset * 86400000;
-      weights.push({
-        id: dateTs,
-        date: dateTs,
-        kg: grams / 1000,
-        updatedAt: dateTs
-      });
-    }
-
-    return {
-      v: 2,
-      babyName,
-      birthDate,
-      sleeps,
-      feeds,
-      weights
-    };
+  function decodeBackup(code){
+    const json=decodeURIComponent(escape(atob(code.trim())));
+    return JSON.parse(json);
   }
 
   // ─── EXPORT SECTION ──────────────────────────────────────────────────────────
@@ -2090,7 +1854,7 @@
     const doBackup=()=>{
       haptic(10);
       const state={
-        v:2,
+        v:1,
         babyName, birthDate,
         sleeps:loadLS("ww_sleeps",[]),
         feeds:loadLS("ww_feeds",[]),
@@ -2115,14 +1879,6 @@
         }catch{}
       }
       if(ok){setCopied(true);setTimeout(()=>setCopied(false),2500);}
-    };
-
-    const downloadCode=()=>{
-      haptic(10);
-      const namePart = sanitizeFilePart(babyName) || "baby";
-      const todayPart = tsToDateStr(Date.now());
-      const filename = `wonder-weeks-backup-${namePart}-${todayPart}.txt`;
-      downloadFile(backupCode, filename, "text/plain;charset=utf-8;");
     };
 
     const openRestore=()=>{haptic(8);setRestoreCode("");setRestoreError(false);setRestoreOpen(true);};
@@ -2207,19 +1963,13 @@
         <BottomSheet open={codeSheetOpen} onClose={()=>setCodeSheetOpen(false)} T={T}>
           <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:10,textAlign:"center"}}>{lang==="he"?"קוד הגיבוי שלך":"Your Backup Code"}</div>
           <div style={{fontSize:11,color:T.muted,marginBottom:10,lineHeight:1.5}}>
-            {lang==="he"?"לחצו על 'העתק' או 'הורד קובץ'. אם זה לא עובד, בחרו את הטקסט למטה ידנית והעתיקו אותו בעצמכם.":"Tap Copy or Download. If that doesn't work, manually select the text below and copy it yourself."}
+            {lang==="he"?"לחצו על 'העתק'. אם זה לא עובד, בחרו את הטקסט למטה ידנית והעתיקו אותו בעצמכם.":"Tap Copy. If that doesn't work, manually select the text below and copy it yourself."}
           </div>
           <textarea ref={codeRef} readOnly value={backupCode} onFocus={e=>e.target.select()}
             style={{width:"100%",minHeight:130,padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:11.5,outline:"none",resize:"vertical",fontFamily:"monospace",direction:"ltr",marginBottom:14}}/>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={copyCode} style={{flex:1,padding:14,background:copied?"rgba(34,197,94,.18)":"linear-gradient(135deg,#6366f1,#8b5cf6)",border:copied?"1px solid rgba(34,197,94,.4)":"none",borderRadius:14,color:copied?"#4ade80":"#fff",fontSize:14,fontWeight:800,boxShadow:copied?"none":"0 4px 20px rgba(99,102,241,.4)",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-              {copied?"✓ "+(lang==="he"?"הועתק!":"Copied!"):"📋 "+(lang==="he"?"העתק ללוח":"Copy")}
-            </button>
-            <button onClick={downloadCode} style={{flex:1,padding:14,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.text,fontSize:14,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-              {lang==="he"?"הורד קובץ":"Download"}
-            </button>
-          </div>
+          <button onClick={copyCode} style={{width:"100%",padding:14,background:copied?"rgba(34,197,94,.18)":"linear-gradient(135deg,#6366f1,#8b5cf6)",border:copied?"1px solid rgba(34,197,94,.4)":"none",borderRadius:14,color:copied?"#4ade80":"#fff",fontSize:15,fontWeight:800,boxShadow:copied?"none":"0 4px 20px rgba(99,102,241,.4)"}}>
+            {copied?"✓ "+(lang==="he"?"הועתק!":"Copied!"):"📋 "+(lang==="he"?"העתק ללוח":"Copy to Clipboard")}
+          </button>
         </BottomSheet>
 
         <BottomSheet open={restoreOpen} onClose={()=>setRestoreOpen(false)} T={T}>
@@ -2361,18 +2111,6 @@
           }
         }
 
-        const qTarget = window.query(
-          window.collection(window.db, "rooms"),
-          window.where("members", "array-contains", targetUser.id)
-        );
-        const targetSnap = await window.getDocs(qTarget);
-        targetSnap.forEach(async (docSnap) => {
-          const d = docSnap.data();
-          if ((d.members || []).length <= 1 && !d.scheduled_deletion) {
-            await window.setDoc(docSnap.ref, { scheduled_deletion: Date.now() + 30 * 24 * 60 * 60 * 1000 }, { merge: true });
-          }
-        });
-
         setToast({message: lang === "he" ? "השותף הוזמן בהצלחה!" : "Partner invited successfully!", type:"success"});
         setInviteEmail("");
       } catch (e) {
@@ -2397,17 +2135,6 @@
         await window.setDoc(roomRef, { members: updatedUids }, { merge: true });
 
         if (uid === user.uid) {
-          const qSched = window.query(
-            window.collection(window.db, "rooms"),
-            window.where("members", "array-contains", uid)
-          );
-          const schedSnap = await window.getDocs(qSched);
-          schedSnap.forEach(async (docSnap) => {
-            if (docSnap.data().scheduled_deletion && docSnap.id !== roomId) {
-              await window.deleteDoc(docSnap.ref).catch(console.error);
-            }
-          });
-
           const newPrivateRoomId = crypto.randomUUID();
           const newState = {
             members: [uid],
