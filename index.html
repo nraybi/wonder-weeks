@@ -105,6 +105,11 @@
   const {useState,useEffect,useCallback,useRef,useMemo}=React;
 
   const AuthContext = React.createContext({ user: null, loading: true, roomId: null, setRoomId: () => {} });
+  function markRoomKnown(id) {
+    if (!id) return;
+    const known = loadLS("ww_known_rooms", []);
+    if (!known.includes(id)) saveLS("ww_known_rooms", [...known, id]);
+  }
   function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -127,6 +132,7 @@
 
           const paramRoomId = new URLSearchParams(window.location.search).get('room');
           if (paramRoomId) {
+            markRoomKnown(paramRoomId);
             setRoomId(paramRoomId);
           } else {
             try {
@@ -138,6 +144,7 @@
               const activeDocs = snap.docs.filter(d => !d.data().scheduled_deletion);
               if (activeDocs.length > 0) {
                 const autoRoomId = activeDocs[0].id;
+                markRoomKnown(autoRoomId);
                 setRoomId(autoRoomId);
                 const url = new URL(window.location);
                 url.searchParams.set('room', autoRoomId);
@@ -154,6 +161,7 @@
                   created_at: Date.now()
                 };
                 await window.setDoc(window.doc(window.db, "rooms", newRoomId), initialRoom);
+                markRoomKnown(newRoomId);
                 setRoomId(newRoomId);
                 const url = new URL(window.location);
                 url.searchParams.set('room', newRoomId);
@@ -168,18 +176,53 @@
       });
     }, []);
 
+    // Live invite detection: keep listening for OTHER rooms this account gets
+    // added to (e.g. a partner just invited them) while already signed in.
+    // A room only counts as a fresh invite if we've never been in it before
+    // (ww_known_rooms), AND either we've never declined it, or the owner has
+    // invited us again (a newer room.invited[uid] timestamp) since we declined.
+    useEffect(() => {
+      if (!user || !window.db || !roomId) return;
+      const q = window.query(
+        window.collection(window.db, "rooms"),
+        window.where("members", "array-contains", user.uid)
+      );
+      const unsub = window.onSnapshot(q, snap => {
+        const known = loadLS("ww_known_rooms", []);
+        const ignored = loadLS("ww_ignored_rooms", {});
+        const candidate = snap.docs.find(d => {
+          if (d.id === roomId || known.includes(d.id) || d.data().scheduled_deletion) return false;
+          const declinedAt = ignored[d.id];
+          if (declinedAt === undefined) return true;
+          const invitedAt = (d.data().invited || {})[user.uid];
+          return !!invitedAt && invitedAt > declinedAt;
+        });
+        setPendingRoomInvite(candidate ? candidate.id : null);
+      });
+      return unsub;
+    }, [user?.uid, roomId]);
+
     const acceptRoomInvite = () => {
       if (!pendingRoomInvite) return;
+      // Simple overwrite, not a smart merge: wipe local tracking data first so
+      // the incoming room's data replaces it outright instead of interleaving
+      // with whatever this device had in its own (now-abandoned) room.
+      localStorage.removeItem("ww_sleeps");
+      localStorage.removeItem("ww_feeds");
+      localStorage.removeItem("ww_weights");
+      localStorage.removeItem("ww_deleted_ids");
+      window.dispatchEvent(new Event('ww_local_data_restored'));
       const url = new URL(window.location);
       url.searchParams.set('room', pendingRoomInvite);
       window.history.replaceState({}, '', url);
+      markRoomKnown(pendingRoomInvite);
       setRoomId(pendingRoomInvite);
       setPendingRoomInvite(null);
     };
     const declineRoomInvite = () => {
       if (!pendingRoomInvite) return;
-      const ignored = loadLS("ww_ignored_rooms", []);
-      saveLS("ww_ignored_rooms", [...ignored, pendingRoomInvite]);
+      const ignored = loadLS("ww_ignored_rooms", {});
+      saveLS("ww_ignored_rooms", { ...ignored, [pendingRoomInvite]: Date.now() });
       setPendingRoomInvite(null);
     };
 
@@ -2103,13 +2146,12 @@
         
         const roomRef = window.doc(window.db, "rooms", currentRoomId);
         const snap = await window.getDoc(roomRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          const uids = data.members || [];
-          if (!uids.includes(targetUser.id)) {
-            await window.setDoc(roomRef, { members: [...uids, targetUser.id] }, { merge: true });
-          }
+        const uids = snap.exists() ? (snap.data().members || []) : [];
+        const payload = { [`invited.${targetUser.id}`]: Date.now() };
+        if (!uids.includes(targetUser.id)) {
+          payload.members = [...uids, targetUser.id];
         }
+        await window.setDoc(roomRef, payload, { merge: true });
 
         setToast({message: lang === "he" ? "השותף הוזמן בהצלחה!" : "Partner invited successfully!", type:"success"});
         setInviteEmail("");
@@ -2275,7 +2317,12 @@
                       {isSelf ? (
                         <span style={{fontSize:11,color:T.sub,fontWeight:700,flexShrink:0,marginInlineStart:8}}>{lang==="he"?"(את/ה)":"(You)"}</span>
                       ) : alreadyAdded ? (
-                        <span style={{fontSize:11,color:"#4ade80",fontWeight:700,flexShrink:0,marginInlineStart:8}}>✓ {lang==="he"?"כבר נוסף":"Added"}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginInlineStart:8}}>
+                          <span style={{fontSize:11,color:"#4ade80",fontWeight:700}}>✓ {lang==="he"?"כבר נוסף":"Added"}</span>
+                          <button onClick={() => handleInviteUser(u)} disabled={invitingId===u.id} style={{padding:"5px 10px",background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:8,color:T.sub,fontSize:11,fontWeight:700,opacity:invitingId===u.id?.6:1}}>
+                            {invitingId===u.id ? "…" : (lang === "he" ? "🔔 הזמן שוב" : "🔔 Remind")}
+                          </button>
+                        </div>
                       ) : (
                         <button onClick={() => handleInviteUser(u)} disabled={invitingId===u.id} style={{padding:"6px 12px", background:T.accentBg, color:T.accentText, borderRadius:8, fontSize:12, fontWeight:700, border:"none", flexShrink:0, marginInlineStart:8, opacity:invitingId===u.id?.6:1}}>
                           {invitingId===u.id ? "…" : (lang === "he" ? "הזמן" : "Invite")}
@@ -2411,6 +2458,7 @@
 
   // ─── APP ─────────────────────────────────────────────────────────────────────
   function App(){
+    const { pendingRoomInvite, acceptRoomInvite, declineRoomInvite } = useAuth();
     const[isDark,setIsDark]=useState(()=>{const d=localStorage.getItem("ww_theme")!=="light";document.body.style.background=d?"#0a0f1e":"#faf8f5";return d;});
     const[lang,setLang]=useState(()=>loadLS("ww_lang","he"));
     const[birthDate,setBirthDate]=useSyncState("ww_date","");
@@ -2459,6 +2507,29 @@
     const dir=lang==="he"?"rtl":"ltr";
 
     return<div dir={dir} style={{minHeight:"100vh",minHeight:"100dvh",background:T.bg,overflowX:"hidden",transition:"background .3s",paddingBottom:80}}>
+      {pendingRoomInvite && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,zIndex:9999}}>
+          <div style={{maxWidth:360,width:"100%",background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:20,padding:22,textAlign:"center"}}>
+            <div style={{fontSize:34,marginBottom:10}}>👥</div>
+            <h2 style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:10}}>
+              {lang==="he"?"הוזמנת לחדר משותף":"You've been invited to a shared room"}
+            </h2>
+            <p style={{fontSize:13,color:T.sub,lineHeight:1.6,marginBottom:20}}>
+              {lang==="he"
+                ?"שותף הזמין אותך לשתף נתונים בזמן אמת. אישור יחליף את הנתונים שלכם בנתונים של השותף (ללא מיזוג). אפשר לצאת מהחדר בכל שלב."
+                :"A partner invited you to share data in real time. Accepting will overwrite your tracking data with theirs (no merge). You can leave the shared room again at any time."}
+            </p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={declineRoomInvite} style={{flex:1,padding:"12px 0",background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:12,color:T.sub,fontWeight:700,fontSize:14}}>
+                {lang==="he"?"דחה":"Decline"}
+              </button>
+              <button onClick={acceptRoomInvite} style={{flex:1,padding:"12px 0",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:12,color:"#fff",fontWeight:800,fontSize:14}}>
+                {lang==="he"?"אשר":"Accept"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <style>{`
         @keyframes twinkle{from{opacity:.06}to{opacity:.65}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
