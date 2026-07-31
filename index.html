@@ -1333,8 +1333,7 @@
   }
 
   // ─── SLEEP TAB ───────────────────────────────────────────────────────────────
-  function SleepTab({T,S,lang,sunTimes}){
-    const[sleeps,setSleeps]=useSyncState("ww_sleeps",[]);
+  function SleepTab({T,S,lang,sunTimes,sleeps,setSleeps}){
     const[now,setNow]=useState(Date.now());
     useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(t);},[]);
     useEffect(()=>saveLS("ww_sleeps",sleeps),[sleeps]);
@@ -1519,9 +1518,7 @@
   }
 
   // ─── FEED TAB ────────────────────────────────────────────────────────────────
-  function FeedTab({T,S,lang}){
-    const[feeds,setFeeds]=useSyncState("ww_feeds",[]);
-    const[weights]=useSyncState("ww_weights",[]);
+  function FeedTab({T,S,lang,feeds,setFeeds,weights}){
     const[sheetOpen,setSheetOpen]=useState(false);
     const[editingId,setEditingId]=useState(null); // null = adding new
     const[feedType,setFeedType]=useState("breast");
@@ -1733,8 +1730,7 @@
   }
 
   // ─── WEIGHT SECTION (baby weight tracking for feed-target calculations) ────
-  function WeightSection({T,S,lang}){
-    const[weights,setWeights]=useSyncState("ww_weights",[]);
+  function WeightSection({T,S,lang,weights,setWeights}){
     const[sheetOpen,setSheetOpen]=useState(false);
     const[editingId,setEditingId]=useState(null);
     const[wKg,setWKg]=useState("");
@@ -2354,7 +2350,7 @@
 
 
   // ─── SETTINGS TAB ────────────────────────────────────────────────────────────
-  function SettingsTab({T,S,lang,setLang,isDark,toggleTheme,birthDate,setBirthDate,babyName,setBabyName,installPrompt,installed,doInstall}){
+  function SettingsTab({T,S,lang,setLang,isDark,toggleTheme,birthDate,setBirthDate,babyName,setBabyName,installPrompt,installed,doInstall,weights,setWeights}){
     const[showClear,setShowClear]=useState(false);
     const today=new Date().toISOString().split("T")[0];
     const earliest=new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
@@ -2405,7 +2401,7 @@
         </div>
 
         {/* Baby weight tracking */}
-        <WeightSection T={T} S={S} lang={lang}/>
+        <WeightSection T={T} S={S} lang={lang} weights={weights} setWeights={setWeights}/>
 
         {/* Export data */}
         <ExportSection T={T} S={S} lang={lang} babyName={babyName} birthDate={birthDate}/>
@@ -2463,6 +2459,9 @@
     const[lang,setLang]=useState(()=>loadLS("ww_lang","he"));
     const[birthDate,setBirthDate]=useSyncState("ww_date","");
     const[babyName,setBabyName]=useSyncState("ww_babyname","");
+    const[sleeps,setSleeps]=useSyncState("ww_sleeps",[]);
+    const[feeds,setFeeds]=useSyncState("ww_feeds",[]);
+    const[weights,setWeights]=useSyncState("ww_weights",[]);
     const[sunTimes,setSunTimes]=useState(()=>loadLS("ww_suntimes",null));
     useEffect(()=>{
       if(!navigator.geolocation)return;
@@ -2565,9 +2564,9 @@
         {/* Tab content */}
         <div key={activeTab} style={{animation:tabAnim===1?"sl .3s cubic-bezier(.22,1,.36,1)":tabAnim===-1?"sr .3s cubic-bezier(.22,1,.36,1)":"fadeUp .3s ease"}}>
           {activeTab==="leaps"&&<LeapsTab T={T} S={S} lang={lang} birthDate={birthDate} setTab={setTabAndSave}/>}
-          {activeTab==="sleep"&&<SleepTab T={T} S={S} lang={lang} sunTimes={sunTimes}/>}
-          {activeTab==="feed"&&<FeedTab T={T} S={S} lang={lang}/>}
-          {activeTab==="settings"&&<SettingsTab T={T} S={S} lang={lang} setLang={setLang} isDark={isDark} toggleTheme={toggleTheme} birthDate={birthDate} setBirthDate={setBirthDate} babyName={babyName} setBabyName={setBabyName} installPrompt={installPrompt} installed={installed} doInstall={doInstall}/>}
+          {activeTab==="sleep"&&<SleepTab T={T} S={S} lang={lang} sunTimes={sunTimes} sleeps={sleeps} setSleeps={setSleeps}/>}
+          {activeTab==="feed"&&<FeedTab T={T} S={S} lang={lang} feeds={feeds} setFeeds={setFeeds} weights={weights}/>}
+          {activeTab==="settings"&&<SettingsTab T={T} S={S} lang={lang} setLang={setLang} isDark={isDark} toggleTheme={toggleTheme} birthDate={birthDate} setBirthDate={setBirthDate} babyName={babyName} setBabyName={setBabyName} installPrompt={installPrompt} installed={installed} doInstall={doInstall} weights={weights} setWeights={setWeights}/>}
         </div>
       </div>
       <BottomNav activeTab={activeTab} setTab={setTabAndSave} T={T} S={S} lang={lang}/>
