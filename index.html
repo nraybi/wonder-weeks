@@ -242,6 +242,45 @@
   }
   function useAuth() { return React.useContext(AuthContext); }
 
+  // One-time cleanup helper for the legacy near-duplicate sleep records
+  // (backup-restore era, before ids were reliable). Same logic validated
+  // against the real export: pairs within 150s on both start & end are
+  // treated as one real nap; the more precise (less minute-rounded) one
+  // is kept. Not used anywhere else — safe to delete after the one-time
+  // "Merge duplicate sleeps" button in Settings is removed.
+  function findDuplicateSleepIds(sleeps) {
+    const sorted = [...sleeps].sort((a, b) => a.start - b.start);
+    const n = sorted.length;
+    const used = new Array(n).fill(false);
+    const removeIds = new Set();
+    const SEARCH = 150000;
+    const precisionScore = (s) => {
+      let score = 0;
+      if (s.start % 60000 === 0) score++;
+      if (s.end != null && s.end % 60000 === 0) score++;
+      return score;
+    };
+    for (let i = 0; i < n; i++) {
+      if (used[i]) continue;
+      const a = sorted[i];
+      for (let j = i + 1; j < n; j++) {
+        if (used[j]) continue;
+        const b = sorted[j];
+        if (b.start - a.start > SEARCH) break;
+        const ea = a.end ?? null, eb = b.end ?? null;
+        if ((ea === null) !== (eb === null)) continue;
+        if (ea !== null && Math.abs(ea - eb) > SEARCH) continue;
+        const same = a.start === b.start && ea === eb;
+        const pa = precisionScore(a), pb = precisionScore(b);
+        const dropped = same || pa <= pb ? b : a;
+        removeIds.add(String(dropped.id));
+        used[i] = true; used[j] = true;
+        break;
+      }
+    }
+    return removeIds;
+  }
+
   function mergeArrayData(localList = [], cloudList = [], deletedIdsMap = {}) {
     const mergedMap = new Map();
     const getItemTime = (item) => {
@@ -2380,7 +2419,7 @@
 
   // ─── SETTINGS TAB ────────────────────────────────────────────────────────────
   function SettingsTab({T,S,lang,setLang,isDark,toggleTheme,birthDate,setBirthDate,babyName,setBabyName,installPrompt,installed,doInstall,weights,setWeights}){
-    const{user}=useAuth();
+    const{user,roomId}=useAuth();
     const[showClear,setShowClear]=useState(false);
     const today=new Date().toISOString().split("T")[0];
     const earliest=new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
@@ -2393,6 +2432,31 @@
       localStorage.removeItem("ww_deleted_ids");
       setShowRefresh(false);
       window.location.reload();
+    };
+
+    const[mergeStatus,setMergeStatus]=useState(null);
+    const mergeDuplicateSleeps=async()=>{
+      if(!roomId||!window.db)return;
+      if(!window.confirm(lang==="he"?"למזג רשומות שינה כפולות? פעולה חד-פעמית שלא ניתנת לביטול.":"Merge duplicate sleep records? One-time action, cannot be undone."))return;
+      haptic(10);
+      try{
+        const roomRef=window.doc(window.db,"rooms",roomId);
+        const snap=await window.getDoc(roomRef);
+        const cloudData=snap.exists()?snap.data():{};
+        const sleeps=cloudData.ww_sleeps||[];
+        const removeIds=findDuplicateSleepIds(sleeps);
+        const keep=sleeps.filter(s=>!removeIds.has(String(s.id)));
+        const deletedMap={...(cloudData.ww_deleted_ids||{})};
+        removeIds.forEach(id=>{deletedMap[id]=Date.now();});
+        await window.setDoc(roomRef,{ww_sleeps:keep,ww_deleted_ids:deletedMap},{merge:true});
+        saveLS("ww_sleeps",keep);
+        saveLS("ww_deleted_ids",deletedMap);
+        setMergeStatus(`${sleeps.length} → ${keep.length} (${removeIds.size} ${lang==="he"?"מוזגו":"merged"})`);
+        haptic(15);
+      }catch(e){
+        console.error("Merge duplicate sleeps error:",e);
+        setMergeStatus(lang==="he"?"שגיאה במיזוג":"Merge failed");
+      }
     };
 
     return(
@@ -2456,6 +2520,12 @@
           </button>
         )}
         {installed&&<div style={{textAlign:"center",color:T.accentText,fontSize:13,fontWeight:700}}>{S.settings.installed}</div>}
+
+        {/* One-time cleanup for legacy duplicate sleep records. Not meant to
+            stay — delete this block (and findDuplicateSleepIds, and
+            mergeDuplicateSleeps) once used. */}
+        {user&&<button onClick={mergeDuplicateSleeps} style={{padding:13,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.sub,fontSize:13,fontWeight:700}}>{lang==="he"?"מזג רשומות שינה כפולות (חד-פעמי)":"Merge duplicate sleeps (one-time)"}</button>}
+        {mergeStatus&&<div style={{fontSize:12,color:T.sub,textAlign:"center"}}>{mergeStatus}</div>}
 
         {/* Refresh from cloud — signed-in users only. Wipes this device's local
             copy and reloads, so it re-syncs purely from the shared room doc
