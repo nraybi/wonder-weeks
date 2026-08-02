@@ -242,45 +242,6 @@
   }
   function useAuth() { return React.useContext(AuthContext); }
 
-  // One-time cleanup helper for the legacy near-duplicate sleep records
-  // (backup-restore era, before ids were reliable). Same logic validated
-  // against the real export: pairs within 150s on both start & end are
-  // treated as one real nap; the more precise (less minute-rounded) one
-  // is kept. Not used anywhere else — safe to delete after the one-time
-  // "Merge duplicate sleeps" button in Settings is removed.
-  function findDuplicateSleepIds(sleeps) {
-    const sorted = [...sleeps].sort((a, b) => a.start - b.start);
-    const n = sorted.length;
-    const used = new Array(n).fill(false);
-    const removeIds = new Set();
-    const SEARCH = 150000;
-    const precisionScore = (s) => {
-      let score = 0;
-      if (s.start % 60000 === 0) score++;
-      if (s.end != null && s.end % 60000 === 0) score++;
-      return score;
-    };
-    for (let i = 0; i < n; i++) {
-      if (used[i]) continue;
-      const a = sorted[i];
-      for (let j = i + 1; j < n; j++) {
-        if (used[j]) continue;
-        const b = sorted[j];
-        if (b.start - a.start > SEARCH) break;
-        const ea = a.end ?? null, eb = b.end ?? null;
-        if ((ea === null) !== (eb === null)) continue;
-        if (ea !== null && Math.abs(ea - eb) > SEARCH) continue;
-        const same = a.start === b.start && ea === eb;
-        const pa = precisionScore(a), pb = precisionScore(b);
-        const dropped = same || pa <= pb ? b : a;
-        removeIds.add(String(dropped.id));
-        used[i] = true; used[j] = true;
-        break;
-      }
-    }
-    return removeIds;
-  }
-
   function mergeArrayData(localList = [], cloudList = [], deletedIdsMap = {}) {
     const mergedMap = new Map();
     const getItemTime = (item) => {
@@ -540,8 +501,6 @@
         lang:"שפה",install:"התקן אפליקציה",installed:"מותקן ✓",
         share:"שתף",clearData:"נקה נתוני מעקב",clearConfirm:"האם למחוק את כל נתוני השינה, האכלה והמשקל?",
         yes:"כן, מחק",no:"ביטול",
-        refreshCloud:"משוך מחדש מהענן",refreshCloudConfirm:"זה יבטל שינויים מקומיים שטרם סונכרנו ויטען מחדש מהעותק המשותף בענן. להמשיך?",
-        refreshCloudYes:"כן, משוך מחדש",
         weight:"משקל התינוק",weightKg:"משקל (ק\"ג)",updateWeight:"עדכן משקל",
         noWeight:"טרם הוזן משקל",recordedOn:"נמדד ב־",
       },
@@ -595,8 +554,6 @@
         lang:"Language",install:"Install App",installed:"Installed ✓",
         share:"Share",clearData:"Clear tracking data",clearConfirm:"Delete all sleep, feed, and weight data?",
         yes:"Yes, delete",no:"Cancel",
-        refreshCloud:"Refresh from cloud",refreshCloudConfirm:"This discards any local changes not yet synced and reloads straight from the shared cloud copy. Continue?",
-        refreshCloudYes:"Yes, refresh",
         weight:"Baby's Weight",weightKg:"Weight (kg)",updateWeight:"Update Weight",
         noWeight:"No weight recorded yet",recordedOn:"as of",
       },
@@ -2419,45 +2376,11 @@
 
   // ─── SETTINGS TAB ────────────────────────────────────────────────────────────
   function SettingsTab({T,S,lang,setLang,isDark,toggleTheme,birthDate,setBirthDate,babyName,setBabyName,installPrompt,installed,doInstall,weights,setWeights}){
-    const{user,roomId}=useAuth();
+    const{user}=useAuth();
     const[showClear,setShowClear]=useState(false);
     const today=new Date().toISOString().split("T")[0];
     const earliest=new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
     const clearData=()=>{localStorage.removeItem("ww_sleeps");localStorage.removeItem("ww_feeds");localStorage.removeItem("ww_weights");setShowClear(false);window.location.reload();};
-    const[showRefresh,setShowRefresh]=useState(false);
-    const refreshFromCloud=()=>{
-      localStorage.removeItem("ww_sleeps");
-      localStorage.removeItem("ww_feeds");
-      localStorage.removeItem("ww_weights");
-      localStorage.removeItem("ww_deleted_ids");
-      setShowRefresh(false);
-      window.location.reload();
-    };
-
-    const[mergeStatus,setMergeStatus]=useState(null);
-    const mergeDuplicateSleeps=async()=>{
-      if(!roomId||!window.db)return;
-      if(!window.confirm(lang==="he"?"למזג רשומות שינה כפולות? פעולה חד-פעמית שלא ניתנת לביטול.":"Merge duplicate sleep records? One-time action, cannot be undone."))return;
-      haptic(10);
-      try{
-        const roomRef=window.doc(window.db,"rooms",roomId);
-        const snap=await window.getDoc(roomRef);
-        const cloudData=snap.exists()?snap.data():{};
-        const sleeps=cloudData.ww_sleeps||[];
-        const removeIds=findDuplicateSleepIds(sleeps);
-        const keep=sleeps.filter(s=>!removeIds.has(String(s.id)));
-        const deletedMap={...(cloudData.ww_deleted_ids||{})};
-        removeIds.forEach(id=>{deletedMap[id]=Date.now();});
-        await window.setDoc(roomRef,{ww_sleeps:keep,ww_deleted_ids:deletedMap},{merge:true});
-        saveLS("ww_sleeps",keep);
-        saveLS("ww_deleted_ids",deletedMap);
-        setMergeStatus(`${sleeps.length} → ${keep.length} (${removeIds.size} ${lang==="he"?"מוזגו":"merged"})`);
-        haptic(15);
-      }catch(e){
-        console.error("Merge duplicate sleeps error:",e);
-        setMergeStatus(lang==="he"?"שגיאה במיזוג":"Merge failed");
-      }
-    };
 
     return(
       <div style={{display:"flex",flexDirection:"column",gap:14,padding:"0 0 16px"}}>
@@ -2521,25 +2444,6 @@
         )}
         {installed&&<div style={{textAlign:"center",color:T.accentText,fontSize:13,fontWeight:700}}>{S.settings.installed}</div>}
 
-        {/* One-time cleanup for legacy duplicate sleep records. Not meant to
-            stay — delete this block (and findDuplicateSleepIds, and
-            mergeDuplicateSleeps) once used. */}
-        {user&&<button onClick={mergeDuplicateSleeps} style={{padding:13,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.sub,fontSize:13,fontWeight:700}}>{lang==="he"?"מזג רשומות שינה כפולות (חד-פעמי)":"Merge duplicate sleeps (one-time)"}</button>}
-        {mergeStatus&&<div style={{fontSize:12,color:T.sub,textAlign:"center"}}>{mergeStatus}</div>}
-
-        {/* Refresh from cloud — signed-in users only. Wipes this device's local
-            copy and reloads, so it re-syncs purely from the shared room doc
-            instead of union-merging local leftovers back in. Safe: it never
-            touches the cloud data itself, only this device's local cache. */}
-        {user&&!showRefresh&&<button onClick={()=>{haptic(8);setShowRefresh(true);}} style={{padding:13,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.sub,fontSize:13,fontWeight:700}}>{S.settings.refreshCloud}</button>}
-        {user&&showRefresh&&<div style={{background:T.surface2,borderRadius:14,padding:16,border:`1px solid ${T.surface2B}`,display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{color:T.text,fontSize:13,fontWeight:600,textAlign:"center"}}>{S.settings.refreshCloudConfirm}</div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setShowRefresh(false)} style={{flex:1,padding:11,background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:11,color:T.sub,fontSize:14,fontWeight:700}}>{S.settings.no}</button>
-            <button onClick={()=>{haptic(15);refreshFromCloud();}} style={{flex:1,padding:11,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:11,color:"#fff",fontSize:14,fontWeight:700}}>{S.settings.refreshCloudYes}</button>
-          </div>
-        </div>}
-
         {/* Clear data — local-only users only. Signed-in users are cloud-synced,
             and clearData() only wipes localStorage, so it would silently fail
             to remove their data (the sync listener re-pulls it from the room
@@ -2590,10 +2494,19 @@
     const[weights,setWeights]=useSyncState("ww_weights",[]);
     const[sunTimes,setSunTimes]=useState(()=>loadLS("ww_suntimes",null));
     useEffect(()=>{
+      const STALE_AFTER=14*24*60*60*1000; // 14 days — location rarely changes meaningfully, sunrise/sunset tolerate approx fine
+      const cachedGeo=loadLS("ww_geo",null);
+      if(cachedGeo&&Date.now()-cachedGeo.ts<STALE_AFTER){
+        const st=calcSunTimes(cachedGeo.lat,cachedGeo.lng);
+        setSunTimes(st); saveLS("ww_suntimes",st);
+        return;
+      }
       if(!navigator.geolocation)return;
       navigator.geolocation.getCurrentPosition(
         pos=>{
-          const st=calcSunTimes(pos.coords.latitude,pos.coords.longitude);
+          const{latitude:lat,longitude:lng}=pos.coords;
+          saveLS("ww_geo",{lat,lng,ts:Date.now()});
+          const st=calcSunTimes(lat,lng);
           setSunTimes(st); saveLS("ww_suntimes",st);
         },
         ()=>{}, {timeout:8000,maximumAge:3600000}
