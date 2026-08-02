@@ -31,6 +31,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script>
+    window.logAnalyticsEvent = function(){};
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
       let wwRefreshing = false;
@@ -59,7 +60,6 @@
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, browserPopupRedirectResolver } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
     import { getFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
-    import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCPMMW6lrGBHCGjiRsdsdPCki_ynE_3Hsc",
@@ -71,16 +71,26 @@
       measurementId: "G-R6YVQFJGMG"
     };
     
-    let app, auth, db, analytics;
+    let app, auth, db;
     
     try {
       app = initializeApp(firebaseConfig);
-      analytics = getAnalytics(app);
       auth = getAuth(app);
       db = getFirestore(app);
     } catch (e) {
       console.error("Firebase init error", e);
     }
+
+    // logAnalyticsEvent already has a no-op default (set in the plain <script>
+    // above, before this module, so it exists even if this whole module fails
+    // to load — e.g. gstatic.com blocked by network policy or an ad-blocker).
+    // If analytics loads successfully, upgrade it to the real implementation.
+    import('https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js')
+      .then(({ getAnalytics, logEvent }) => {
+        const analytics = getAnalytics(app);
+        window.logAnalyticsEvent = (name, params) => logEvent(analytics, name, params);
+      })
+      .catch(e => console.error("Analytics unavailable", e));
 
     window.firebaseConfig = firebaseConfig;
     window.app = app;
@@ -268,6 +278,31 @@
     return Array.from(mergedMap.values());
   }
 
+  // Pure merge/compare logic, kept separate from the onSnapshot listener in
+  // useSyncState so the listener's job is only: read snapshot -> decide via
+  // these -> apply (setState/saveLS) -> write back if needed.
+  function reconcileArrayField(key, cloudData, localVal) {
+    const localArr = Array.isArray(localVal) ? localVal : [];
+    const cloudArr = Array.isArray(cloudData[key]) ? cloudData[key] : [];
+    const localDeleted = loadLS("ww_deleted_ids", {});
+    const cloudDeleted = cloudData.ww_deleted_ids || {};
+    const mergedDeleted = { ...localDeleted, ...cloudDeleted };
+    const mergedArr = mergeArrayData(localArr, cloudArr, mergedDeleted);
+    const needsWrite = JSON.stringify(cloudArr) !== JSON.stringify(mergedArr)
+      || JSON.stringify(cloudDeleted) !== JSON.stringify(mergedDeleted);
+    return { mergedArr, mergedDeleted, needsWrite };
+  }
+
+  function reconcileScalarField(cloudVal, localVal) {
+    if (cloudVal !== undefined && cloudVal !== null && cloudVal !== "") {
+      return { value: cloudVal, saveLocal: true, needsWrite: false };
+    }
+    if (localVal !== undefined && localVal !== null && localVal !== "") {
+      return { value: localVal, saveLocal: false, needsWrite: true };
+    }
+    return null;
+  }
+
   function useSyncState(key, initialValue) {
     const { roomId, user } = useAuth();
     const [state, setState] = useState(() => loadLS(key, initialValue));
@@ -295,36 +330,26 @@
         const localVal = loadLS(key, initialValue);
 
         if (Array.isArray(initialValue) || Array.isArray(localVal) || Array.isArray(cloudVal)) {
-          const localArr = Array.isArray(localVal) ? localVal : [];
-          const cloudArr = Array.isArray(cloudVal) ? cloudVal : [];
-          const localDeleted = loadLS("ww_deleted_ids", {});
-          const cloudDeleted = cloudData.ww_deleted_ids || {};
-          const mergedDeleted = { ...localDeleted, ...cloudDeleted };
-
-          const mergedArr = mergeArrayData(localArr, cloudArr, mergedDeleted);
+          const { mergedArr, mergedDeleted, needsWrite } = reconcileArrayField(key, cloudData, localVal);
 
           saveLS("ww_deleted_ids", mergedDeleted);
           saveLS(key, mergedArr);
           setState(mergedArr);
 
-          const cloudArrJson = JSON.stringify(cloudArr);
-          const mergedArrJson = JSON.stringify(mergedArr);
-          const cloudDelJson = JSON.stringify(cloudDeleted);
-          const mergedDelJson = JSON.stringify(mergedDeleted);
-
-          if (cloudArrJson !== mergedArrJson || cloudDelJson !== mergedDelJson) {
+          if (needsWrite) {
             window.setDoc(roomRef, {
               [key]: mergedArr,
               ww_deleted_ids: mergedDeleted
             }, { merge: true }).catch(console.error);
           }
         } else {
-          if (cloudVal !== undefined && cloudVal !== null && cloudVal !== "") {
-            setState(cloudVal);
-            saveLS(key, cloudVal);
-          } else if (localVal !== undefined && localVal !== null && localVal !== "") {
-            setState(localVal);
-            window.setDoc(roomRef, { [key]: localVal }, { merge: true }).catch(console.error);
+          const result = reconcileScalarField(cloudVal, localVal);
+          if (result) {
+            setState(result.value);
+            if (result.saveLocal) saveLS(key, result.value);
+            if (result.needsWrite) {
+              window.setDoc(roomRef, { [key]: result.value }, { merge: true }).catch(console.error);
+            }
           }
         }
       }, (err) => {
@@ -1376,7 +1401,7 @@
     const toggleSleep=()=>{
       haptic(activeSleep?12:15);
       if(activeSleep)setSleeps(prev=>prev.map(s=>s.id===activeSleep.id?{...s,end:Date.now(),updatedAt:Date.now()}:s));
-      else setSleeps(prev=>[...prev,{id:Date.now(),start:Date.now(),end:null,updatedAt:Date.now()}]);
+      else {setSleeps(prev=>[...prev,{id:Date.now(),start:Date.now(),end:null,updatedAt:Date.now()}]);window.logAnalyticsEvent("record_added",{type:"sleep"});}
     };
     const deleteSleep=id=>setSleeps(prev=>prev.filter(s=>s.id!==id));
     const recentSleeps=[...sleeps].filter(s=>s.start>=todayStart-13*86400000).sort((a,b)=>b.start-a.start).slice(0,500);
@@ -1573,7 +1598,7 @@
       const prep=feedPrepared?parseInt(feedPrepared):null;
       const note=feedNote.trim()?feedNote.trim():null;
       if(editingId)setFeeds(prev=>prev.map(f=>f.id===editingId?{...f,type:feedType,amount:amt,prepared:prep,note,start:ts,updatedAt:Date.now()}:f));
-      else setFeeds(prev=>[...prev,{id:Date.now(),start:ts,type:feedType,amount:amt,prepared:prep,note,updatedAt:Date.now()}]);
+      else {setFeeds(prev=>[...prev,{id:Date.now(),start:ts,type:feedType,amount:amt,prepared:prep,note,updatedAt:Date.now()}]);window.logAnalyticsEvent("record_added",{type:"feed"});}
       setSheetOpen(false);
     };
     const deleteFeed=id=>setFeeds(prev=>prev.filter(f=>f.id!==id));
@@ -1750,7 +1775,7 @@
       const kg=parseFloat(wKg);
       const ts=new Date(wDate+"T12:00").getTime();
       if(editingId)setWeights(prev=>prev.map(w=>w.id===editingId?{...w,kg,date:ts,updatedAt:Date.now()}:w));
-      else setWeights(prev=>[...prev,{id:Date.now(),kg,date:ts,updatedAt:Date.now()}]);
+      else {setWeights(prev=>[...prev,{id:Date.now(),kg,date:ts,updatedAt:Date.now()}]);window.logAnalyticsEvent("record_added",{type:"weight"});}
       setSheetOpen(false);
     };
     const del=id=>setWeights(prev=>prev.filter(w=>w.id!==id));
@@ -2041,7 +2066,7 @@
   }
 
   function AccountBubble({ T, lang }) {
-    const { user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite } = useAuth();
+    const { user, loading, roomId, setRoomId } = useAuth();
     const [sheetOpen, setSheetOpen] = useState(false);
 
     const [inviteEmail, setInviteEmail] = useState("");
@@ -2351,6 +2376,7 @@
 
   // ─── SETTINGS TAB ────────────────────────────────────────────────────────────
   function SettingsTab({T,S,lang,setLang,isDark,toggleTheme,birthDate,setBirthDate,babyName,setBabyName,installPrompt,installed,doInstall,weights,setWeights}){
+    const{user}=useAuth();
     const[showClear,setShowClear]=useState(false);
     const today=new Date().toISOString().split("T")[0];
     const earliest=new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
@@ -2418,9 +2444,13 @@
         )}
         {installed&&<div style={{textAlign:"center",color:T.accentText,fontSize:13,fontWeight:700}}>{S.settings.installed}</div>}
 
-        {/* Clear data */}
-        {!showClear&&<button onClick={()=>{haptic(8);setShowClear(true);}} style={{padding:13,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.25)",borderRadius:14,color:"#ef4444",fontSize:13,fontWeight:700}}>{S.settings.clearData}</button>}
-        {showClear&&<div style={{background:"rgba(239,68,68,.1)",borderRadius:14,padding:16,border:"1px solid rgba(239,68,68,.25)",display:"flex",flexDirection:"column",gap:10}}>
+        {/* Clear data — local-only users only. Signed-in users are cloud-synced,
+            and clearData() only wipes localStorage, so it would silently fail
+            to remove their data (the sync listener re-pulls it from the room
+            doc on reload). Hidden here until clearData() also clears the room
+            doc; see BackupSection/useSyncState for the sync path. */}
+        {!user&&!showClear&&<button onClick={()=>{haptic(8);setShowClear(true);}} style={{padding:13,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.25)",borderRadius:14,color:"#ef4444",fontSize:13,fontWeight:700}}>{S.settings.clearData}</button>}
+        {!user&&showClear&&<div style={{background:"rgba(239,68,68,.1)",borderRadius:14,padding:16,border:"1px solid rgba(239,68,68,.25)",display:"flex",flexDirection:"column",gap:10}}>
           <div style={{color:"#ef4444",fontSize:13,fontWeight:600,textAlign:"center"}}>{S.settings.clearConfirm}</div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>setShowClear(false)} style={{flex:1,padding:11,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:11,color:T.sub,fontSize:14,fontWeight:700}}>{S.settings.no}</button>
@@ -2478,12 +2508,14 @@
     const[installed,setInstalled]=useState(false);
 
     useEffect(()=>saveLS("ww_lang",lang),[lang]);
+    useEffect(()=>{window.logAnalyticsEvent("app_visited");},[]);
     useEffect(()=>{
       const h=e=>{e.preventDefault();setInstallPrompt(e);};
       window.addEventListener("beforeinstallprompt",h);
       window.addEventListener("appinstalled",()=>{
         setInstalled(true);
         setInstallPrompt(null);
+        window.logAnalyticsEvent("app_installed");
       });
       return()=>window.removeEventListener("beforeinstallprompt",h);
     },[]);
@@ -2530,9 +2562,6 @@
         </div>
       )}
       <style>{`
-        @keyframes twinkle{from{opacity:.06}to{opacity:.65}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(99,102,241,.4)}50%{transform:scale(1.03);box-shadow:0 0 0 12px rgba(99,102,241,0)}}
         @keyframes sl{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:translateX(0)}}
         @keyframes sr{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
         @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
