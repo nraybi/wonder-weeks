@@ -501,6 +501,8 @@
         lang:"שפה",install:"התקן אפליקציה",installed:"מותקן ✓",
         share:"שתף",clearData:"נקה נתוני מעקב",clearConfirm:"האם למחוק את כל נתוני השינה, האכלה והמשקל?",
         yes:"כן, מחק",no:"ביטול",
+        refreshCloud:"משוך מחדש מהענן",refreshCloudConfirm:"זה יבטל שינויים מקומיים שטרם סונכרנו ויטען מחדש מהעותק המשותף בענן. להמשיך?",
+        refreshCloudYes:"כן, משוך מחדש",
         weight:"משקל התינוק",weightKg:"משקל (ק\"ג)",updateWeight:"עדכן משקל",
         noWeight:"טרם הוזן משקל",recordedOn:"נמדד ב־",
       },
@@ -554,6 +556,8 @@
         lang:"Language",install:"Install App",installed:"Installed ✓",
         share:"Share",clearData:"Clear tracking data",clearConfirm:"Delete all sleep, feed, and weight data?",
         yes:"Yes, delete",no:"Cancel",
+        refreshCloud:"Refresh from cloud",refreshCloudConfirm:"This discards any local changes not yet synced and reloads straight from the shared cloud copy. Continue?",
+        refreshCloudYes:"Yes, refresh",
         weight:"Baby's Weight",weightKg:"Weight (kg)",updateWeight:"Update Weight",
         noWeight:"No weight recorded yet",recordedOn:"as of",
       },
@@ -1078,15 +1082,20 @@
   }
 
   // ─── PATTERN GRID (7-day heatmap) ────────────────────────────────────────────
-  function PatternGrid({events,color,bgColor,T,S,type}){
+  function PatternGrid({events,color,bgColor,T,S,type,onSelect,selectedId}){
     const[ready,setReady]=useState(false);
     useEffect(()=>{const t=setTimeout(()=>setReady(true),240);return()=>clearTimeout(t);},[]);
 
+    // Self-ticking clock for the "now" reference line — kept internal so this
+    // component doesn't require its callers to maintain a live clock.
+    const[now,setNow]=useState(Date.now());
+    useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),60000);return()=>clearInterval(t);},[]);
+
     const days=useMemo(()=>{
       const result=[];
-      const now=Date.now();
+      const nowTs=Date.now();
       for(let i=6;i>=0;i--){
-        const dayStart=startOfDay(now-i*86400000);
+        const dayStart=startOfDay(nowTs-i*86400000);
         const dayEnd=dayStart+86400000;
         const prevDayStart=dayStart-86400000;
         // Events that start within this day
@@ -1095,7 +1104,7 @@
         // crosses into this day — these get a continuation sliver at the top.
         const continuesFromPrev=events.filter(e=>{
           if(e.start<prevDayStart||e.start>=dayStart)return false;
-          const effectiveEnd=e.end||now;
+          const effectiveEnd=e.end||nowTs;
           return effectiveEnd>=dayStart;
         });
         result.push({dayStart,startsToday,continuesFromPrev});
@@ -1105,6 +1114,11 @@
 
     const CELL_H=200; // pixels representing 24h
     const dayNames=S[type].days;
+    const nowMin=minutesInDay(now);
+    const nowLineColor=T.ds==="dark"?"rgba(255,255,255,.5)":"rgba(15,23,42,.4)";
+
+    const isSelected=ev=>onSelect&&selectedId!=null&&String(ev.id)===String(selectedId);
+    const selectedStyle={boxShadow:`0 0 0 2px rgba(255,255,255,.95), 0 0 10px 2px ${color}`,zIndex:3,animation:"pulse 1.6s ease-in-out infinite"};
 
     if(!ready)return<div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
       <div style={{fontSize:12,fontWeight:700,color:T.sub,marginBottom:10}}>{S[type].patternTitle}</div>
@@ -1124,39 +1138,57 @@
             {[["00",0],["06",25],["12",50],["18",75],["24",100]].map(([h,pct])=>(
               <div key={h} style={{position:"absolute",top:`${pct}%`,transform:pct===0?"translateY(0)":pct===100?"translateY(-100%)":"translateY(-50%)",fontSize:9,color:T.muted,lineHeight:1}}>{h}</div>
             ))}
+            {/* Current time-of-day, lined up with the now-line drawn across the day columns */}
+            <div style={{position:"absolute",top:`${(nowMin/1440)*100}%`,transform:"translateY(-50%)",fontSize:8.5,fontWeight:800,color:nowLineColor,lineHeight:1,whiteSpace:"nowrap"}}>{fmtTime(now)}</div>
           </div>
           <div style={{height:17}}/>
         </div>
-        {/* Day columns */}
-        {days.map(({dayStart,startsToday,continuesFromPrev},di)=>{
-          const dayLabel=dayNames[(new Date(dayStart)).getDay()];
-          return<div key={di} style={{flex:1,display:"flex",flexDirection:"column",gap:3}}>
-            <div style={{height:CELL_H,background:T.surface2,borderRadius:6,position:"relative",overflow:"hidden"}}>
-              {/* Hour grid lines */}
-              {[6,12,18].map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${(h/24)*100}%`,height:1,background:"rgba(128,128,128,.12)"}}/>)}
-              {type==="sleep"&&startsToday.map((ev,ei)=>{
-                const startMin=minutesInDay(ev.start);
-                const crossesMidnight=ev.end?(dayKey(ev.end)!==dayKey(ev.start)):(dayKey(Date.now())!==dayKey(ev.start));
-                const endMin=crossesMidnight?1440:(ev.end?minutesInDay(ev.end):Math.min(minutesInDay(ev.start)+60,1440));
-                const durMin=endMin-startMin;
-                const topPct=(startMin/1440)*100;
-                const hPct=Math.max((durMin/1440)*100,1.5);
-                return<div key={"s"+ei} style={{position:"absolute",left:2,right:2,top:`${topPct}%`,height:`${hPct}%`,background:color,borderRadius:3,opacity:.85}}/>;
-              })}
-              {type==="sleep"&&continuesFromPrev.map((ev,ei)=>{
-                const endMin=ev.end?minutesInDay(ev.end):minutesInDay(Date.now());
-                const hPct=Math.max((endMin/1440)*100,1.5);
-                return<div key={"c"+ei} style={{position:"absolute",left:2,right:2,top:0,height:`${hPct}%`,background:color,borderRadius:3,opacity:.85}}/>;
-              })}
-              {type==="feed"&&startsToday.map((ev,ei)=>{
-                const min=minutesInDay(ev.start);
-                const topPct=(min/1440)*100;
-                return<div key={ei} style={{position:"absolute",left:2,right:2,top:`calc(${topPct}% - 3px)`,height:6,background:color,borderRadius:3,opacity:.9}}/>;
-              })}
-            </div>
-            <div style={{fontSize:10,color:T.sub,textAlign:"center",fontWeight:600}}>{dayLabel}</div>
-          </div>;
-        })}
+        {/* Day columns, wrapped so a single "now" line can span all of them */}
+        <div style={{position:"relative",display:"flex",gap:4,flex:1}}>
+          {days.map(({dayStart,startsToday,continuesFromPrev},di)=>{
+            const dayLabel=dayNames[(new Date(dayStart)).getDay()];
+            return<div key={di} style={{flex:1,display:"flex",flexDirection:"column",gap:3}}>
+              <div style={{height:CELL_H,background:T.surface2,borderRadius:6,position:"relative",overflow:"hidden"}}>
+                {/* Hour grid lines */}
+                {[6,12,18].map(h=><div key={h} style={{position:"absolute",left:0,right:0,top:`${(h/24)*100}%`,height:1,background:"rgba(128,128,128,.12)"}}/>)}
+                {type==="sleep"&&startsToday.map((ev,ei)=>{
+                  const startMin=minutesInDay(ev.start);
+                  const crossesMidnight=ev.end?(dayKey(ev.end)!==dayKey(ev.start)):(dayKey(Date.now())!==dayKey(ev.start));
+                  const endMin=crossesMidnight?1440:(ev.end?minutesInDay(ev.end):Math.min(minutesInDay(ev.start)+60,1440));
+                  const durMin=endMin-startMin;
+                  const topPct=(startMin/1440)*100;
+                  const hPct=Math.max((durMin/1440)*100,1.5);
+                  const sel=isSelected(ev);
+                  return<div key={"s"+ei} onClick={()=>onSelect?.(ev)} style={{position:"absolute",left:2,right:2,top:`${topPct}%`,height:`${hPct}%`,background:color,borderRadius:3,opacity:sel?1:.85,cursor:onSelect?"pointer":"default",...(sel?selectedStyle:null)}}/>;
+                })}
+                {type==="sleep"&&continuesFromPrev.map((ev,ei)=>{
+                  const endMin=ev.end?minutesInDay(ev.end):minutesInDay(Date.now());
+                  const hPct=Math.max((endMin/1440)*100,1.5);
+                  // Same underlying event as its startsToday half on the previous day —
+                  // clicking either fragment opens the one true continuous session
+                  // (real start/end spanning midnight), not just this visible sliver.
+                  // Selection highlight applies here too, so both fragments glow together.
+                  const sel=isSelected(ev);
+                  return<div key={"c"+ei} onClick={()=>onSelect?.(ev)} style={{position:"absolute",left:2,right:2,top:0,height:`${hPct}%`,background:color,borderRadius:3,opacity:sel?1:.85,cursor:onSelect?"pointer":"default",...(sel?selectedStyle:null)}}/>;
+                })}
+                {type==="feed"&&startsToday.map((ev,ei)=>{
+                  const min=minutesInDay(ev.start);
+                  const topPct=(min/1440)*100;
+                  const sel=isSelected(ev);
+                  // Wrapped in a taller invisible hit area (14px) so the thin 6px dot
+                  // stays easy to tap on mobile without changing how it looks.
+                  return<div key={ei} onClick={()=>onSelect?.(ev)} style={{position:"absolute",left:2,right:2,top:`calc(${topPct}% - 7px)`,height:14,display:"flex",alignItems:"center",cursor:onSelect?"pointer":"default",zIndex:sel?3:1}}>
+                    <div style={{width:"100%",height:6,background:color,borderRadius:3,opacity:sel?1:.9,boxShadow:sel?`0 0 0 2px rgba(255,255,255,.95), 0 0 8px 2px ${color}`:"none",animation:sel?"pulse 1.6s ease-in-out infinite":"none"}}/>
+                  </div>;
+                })}
+              </div>
+              <div style={{fontSize:10,color:T.sub,textAlign:"center",fontWeight:600}}>{dayLabel}</div>
+            </div>;
+          })}
+          {/* "Now" reference line — same time-of-day across every column, so users
+              can compare what's happening right now against other days */}
+          <div style={{position:"absolute",left:0,right:0,top:`${(nowMin/1440)*CELL_H}px`,borderTop:`1.5px dashed ${nowLineColor}`,pointerEvents:"none",zIndex:2}}/>
+        </div>
       </div>
     </div>;
   }
@@ -1416,6 +1448,10 @@
     const[hasEnd,setHasEnd]=useState(true);
     const todayDateStr=tsToDateStr(now);
 
+    // ── Read-only info popup (tap on a pattern-grid bar) ──
+    const[infoSleep,setInfoSleep]=useState(null);
+    const openInfoSleep=s=>{haptic(6);setInfoSleep(s);};
+
     const openEditSleep=s=>{
       haptic(8);
       setEditId(s.id);
@@ -1454,7 +1490,7 @@
         </div>
 
         {/* 7-day pattern */}
-        <PatternGrid events={sleeps} color={T.sleepColor} bgColor={T.sleepBg} T={T} S={S} type="sleep"/>
+        <PatternGrid events={sleeps} color={T.sleepColor} bgColor={T.sleepBg} T={T} S={S} type="sleep" onSelect={openInfoSleep} selectedId={infoSleep?.id}/>
 
         {/* History — grouped by day, collapsible */}
         <div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
@@ -1515,6 +1551,45 @@
             <button onClick={saveEditSleep} style={{flex:1,padding:14,background:"linear-gradient(135deg,#7c3aed,#6366f1)",border:"none",borderRadius:14,color:"#fff",fontSize:15,fontWeight:800,boxShadow:"0 4px 20px rgba(99,102,241,.4)"}}>{lang==="he"?"שמור":"Save"}</button>
           </div>
         </BottomSheet>
+
+        {/* Read-only info popup for pattern-grid taps */}
+        <BottomSheet open={!!infoSleep} onClose={()=>setInfoSleep(null)} T={T}>
+          {infoSleep&&(()=>{
+            const dur=infoSleep.end?infoSleep.end-infoSleep.start:now-infoSleep.start;
+            return<div style={{textAlign:"center",padding:"4px 0 6px"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🌙</div>
+              <div style={{marginBottom:8,display:"flex",justifyContent:"center"}}>
+                {infoSleep.end
+                  ?<TimeRangeBadge start={infoSleep.start} end={infoSleep.end} color={T.sleepColor} T={T} large/>
+                  :<div style={{fontSize:18,fontWeight:800,color:T.text}}>{fmtTime(infoSleep.start)} · {lang==="he"?"ישן עכשיו":"sleeping now"}</div>}
+              </div>
+              <div style={{fontSize:14,color:T.sub,marginBottom:4}}>{S.sleep.duration}: {fmtDur(dur)}</div>
+              <div style={{fontSize:12,color:T.muted}}>{new Date(infoSleep.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{weekday:"long",day:"numeric",month:"short"})}</div>
+            </div>;
+          })()}
+        </BottomSheet>
+      </div>
+    );
+  }
+
+  // ─── TIME RANGE BADGE (start + end shown as two skewed, seamed chips instead
+  // of an arrow character — the diagonal seam reads as "flows into", and since
+  // it's pure shapes/CSS it never gets flipped by RTL bidi mirroring the way a
+  // ← / → glyph does. Direction is forced to ltr just for this small chip so
+  // start always renders before end, regardless of the app language.) ────────
+  function TimeRangeBadge({start,end,color,T,large}){
+    const h=large?32:21;
+    const fs=large?15:12;
+    const pad=large?"0 12px":"0 8px";
+    const skew=large?9:11;
+    return(
+      <div style={{display:"inline-flex",height:h,borderRadius:large?10:6,overflow:"hidden",direction:"ltr",flexShrink:0}}>
+        <div style={{transform:`skewX(-${skew}deg)`,marginRight:large?-9:-5,background:`${color}28`,display:"flex",alignItems:"center",padding:pad}}>
+          <span style={{display:"inline-block",transform:`skewX(${skew}deg)`,fontSize:fs,fontWeight:800,color:T.text,whiteSpace:"nowrap"}}>{fmtTime(start)}</span>
+        </div>
+        <div style={{transform:`skewX(-${skew}deg)`,background:`${color}45`,display:"flex",alignItems:"center",padding:pad}}>
+          <span style={{display:"inline-block",transform:`skewX(${skew}deg)`,fontSize:fs,fontWeight:800,color:T.text,whiteSpace:"nowrap"}}>{end?fmtTime(end):"…"}</span>
+        </div>
       </div>
     );
   }
@@ -1522,7 +1597,6 @@
   function SleepRow({s,now,T,S,lang,dayColor}){
     const dur=s.end?s.end-s.start:now-s.start;
     const isActive=!s.end;
-    const arrow=lang==="he"?"←":"→";
     const c=dayColor||"#6366f1";
     return<div style={{display:"flex",alignItems:"center",gap:11,padding:"9px 10px"}}>
       <div style={{width:32,height:32,borderRadius:11,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:isActive?`0 0 0 2px ${c}88`:"none"}}>
@@ -1530,11 +1604,10 @@
       </div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13.5,fontWeight:700,color:T.text}}>
-          <span>{fmtTime(s.start)}</span>
-          {s.end?<>
-            <span style={{color:T.muted,fontSize:12,fontWeight:400}}>{arrow}</span>
-            <span>{fmtTime(s.end)}</span>
-          </>:<span style={{color:"#818cf8",fontWeight:600,fontSize:12}}>{lang==="he"?"ישן עכשיו":"sleeping now"}</span>}
+          {s.end?<TimeRangeBadge start={s.start} end={s.end} color={c} T={T}/>:<>
+            <span>{fmtTime(s.start)}</span>
+            <span style={{color:"#818cf8",fontWeight:600,fontSize:12}}>{lang==="he"?"ישן עכשיו":"sleeping now"}</span>
+          </>}
           <span style={{fontSize:11,color:T.sub,fontWeight:500,marginInlineStart:"auto"}}>{fmtDur(dur)}</span>
         </div>
         <div style={{fontSize:11,color:T.sub,marginTop:1}}>{new Date(s.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</div>
@@ -1552,6 +1625,10 @@
     const[feedNote,setFeedNote]=useState("");
     const[feedDate,setFeedDate]=useState(()=>tsToDateStr(Date.now()));
     const[feedTimeOnly,setFeedTimeOnly]=useState(()=>tsToTimeStr(Date.now()));
+
+    // ── Read-only info popup (tap on a pattern-grid dot) ──
+    const[infoFeed,setInfoFeed]=useState(null);
+    const openInfoFeed=f=>{haptic(6);setInfoFeed(f);};
 
     useEffect(()=>saveLS("ww_feeds",feeds),[feeds]);
 
@@ -1636,7 +1713,7 @@
         </div>
 
         {/* Pattern grid */}
-        <PatternGrid events={feeds} color={T.feedColor} bgColor={T.feedBg} T={T} S={S} type="feed"/>
+        <PatternGrid events={feeds} color={T.feedColor} bgColor={T.feedBg} T={T} S={S} type="feed" onSelect={openInfoFeed} selectedId={infoFeed?.id}/>
 
         {/* History — grouped by day, collapsible */}
         <div style={{background:T.surface,borderRadius:16,padding:"14px",border:`1px solid ${T.surfaceB}`}}>
@@ -1719,6 +1796,21 @@
             </button>}
             <button onClick={saveFeed} style={{flex:1,padding:14,background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:14,color:"#fff",fontSize:15,fontWeight:800,boxShadow:"0 4px 20px rgba(249,115,22,.4)"}}>{S.feed.save}</button>
           </div>
+        </BottomSheet>
+
+        {/* Read-only info popup for pattern-grid taps */}
+        <BottomSheet open={!!infoFeed} onClose={()=>setInfoFeed(null)} T={T}>
+          {infoFeed&&(()=>{
+            const hasBoth=infoFeed.prepared&&infoFeed.amount&&infoFeed.prepared!==infoFeed.amount;
+            const singleMl=infoFeed.amount??infoFeed.prepared;
+            return<div style={{textAlign:"center",padding:"4px 0 6px"}}>
+              <div style={{fontSize:32,marginBottom:8}}>{typeEmoji[infoFeed.type]||"🍼"}</div>
+              <div style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:6}}>{fmtTime(infoFeed.start)} · {S.feed.types[infoFeed.type]}</div>
+              {singleMl?<div style={{fontSize:14,color:T.sub,marginBottom:4}}>{hasBoth?`${infoFeed.amount}/${infoFeed.prepared} ${lang==="he"?"מ״ל":"ml"}`:`${singleMl} ${lang==="he"?"מ״ל":"ml"}`}</div>:null}
+              {infoFeed.note&&<div style={{fontSize:13,color:T.muted,fontStyle:"italic",marginBottom:4}}>"{infoFeed.note}"</div>}
+              <div style={{fontSize:12,color:T.muted}}>{new Date(infoFeed.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{weekday:"long",day:"numeric",month:"short"})}</div>
+            </div>;
+          })()}
         </BottomSheet>
       </div>
     );
@@ -2381,6 +2473,15 @@
     const today=new Date().toISOString().split("T")[0];
     const earliest=new Date(Date.now()-84*7*24*60*60*1000).toISOString().split("T")[0];
     const clearData=()=>{localStorage.removeItem("ww_sleeps");localStorage.removeItem("ww_feeds");localStorage.removeItem("ww_weights");setShowClear(false);window.location.reload();};
+    const[showRefresh,setShowRefresh]=useState(false);
+    const refreshFromCloud=()=>{
+      localStorage.removeItem("ww_sleeps");
+      localStorage.removeItem("ww_feeds");
+      localStorage.removeItem("ww_weights");
+      localStorage.removeItem("ww_deleted_ids");
+      setShowRefresh(false);
+      window.location.reload();
+    };
 
     return(
       <div style={{display:"flex",flexDirection:"column",gap:14,padding:"0 0 16px"}}>
@@ -2444,6 +2545,19 @@
         )}
         {installed&&<div style={{textAlign:"center",color:T.accentText,fontSize:13,fontWeight:700}}>{S.settings.installed}</div>}
 
+        {/* Refresh from cloud — signed-in users only. Wipes this device's local
+            copy and reloads, so it re-syncs purely from the shared room doc
+            instead of union-merging local leftovers back in. Safe: it never
+            touches the cloud data itself, only this device's local cache. */}
+        {user&&!showRefresh&&<button onClick={()=>{haptic(8);setShowRefresh(true);}} style={{padding:13,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.sub,fontSize:13,fontWeight:700}}>{S.settings.refreshCloud}</button>}
+        {user&&showRefresh&&<div style={{background:T.surface2,borderRadius:14,padding:16,border:`1px solid ${T.surface2B}`,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{color:T.text,fontSize:13,fontWeight:600,textAlign:"center"}}>{S.settings.refreshCloudConfirm}</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowRefresh(false)} style={{flex:1,padding:11,background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:11,color:T.sub,fontSize:14,fontWeight:700}}>{S.settings.no}</button>
+            <button onClick={()=>{haptic(15);refreshFromCloud();}} style={{flex:1,padding:11,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:11,color:"#fff",fontSize:14,fontWeight:700}}>{S.settings.refreshCloudYes}</button>
+          </div>
+        </div>}
+
         {/* Clear data — local-only users only. Signed-in users are cloud-synced,
             and clearData() only wipes localStorage, so it would silently fail
             to remove their data (the sync listener re-pulls it from the room
@@ -2494,19 +2608,10 @@
     const[weights,setWeights]=useSyncState("ww_weights",[]);
     const[sunTimes,setSunTimes]=useState(()=>loadLS("ww_suntimes",null));
     useEffect(()=>{
-      const STALE_AFTER=14*24*60*60*1000; // 14 days — location rarely changes meaningfully, sunrise/sunset tolerate approx fine
-      const cachedGeo=loadLS("ww_geo",null);
-      if(cachedGeo&&Date.now()-cachedGeo.ts<STALE_AFTER){
-        const st=calcSunTimes(cachedGeo.lat,cachedGeo.lng);
-        setSunTimes(st); saveLS("ww_suntimes",st);
-        return;
-      }
       if(!navigator.geolocation)return;
       navigator.geolocation.getCurrentPosition(
         pos=>{
-          const{latitude:lat,longitude:lng}=pos.coords;
-          saveLS("ww_geo",{lat,lng,ts:Date.now()});
-          const st=calcSunTimes(lat,lng);
+          const st=calcSunTimes(pos.coords.latitude,pos.coords.longitude);
           setSunTimes(st); saveLS("ww_suntimes",st);
         },
         ()=>{}, {timeout:8000,maximumAge:3600000}
