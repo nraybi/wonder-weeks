@@ -59,7 +59,7 @@
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, browserPopupRedirectResolver } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-    import { getFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc, collection, query, where, getDocs, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCPMMW6lrGBHCGjiRsdsdPCki_ynE_3Hsc",
@@ -110,6 +110,8 @@
     window.query = query;
     window.where = where;
     window.getDocs = getDocs;
+    window.arrayUnion = arrayUnion;
+    window.arrayRemove = arrayRemove;
   </script>
   <script type="text/babel">
   const {useState,useEffect,useCallback,useRef,useMemo}=React;
@@ -125,6 +127,7 @@
     const [loading, setLoading] = useState(true);
     const [roomId, setRoomId] = useState(() => new URLSearchParams(window.location.search).get('room'));
     const [pendingRoomInvite, setPendingRoomInvite] = useState(null);
+    const [leaveNotice, setLeaveNotice] = useState(null);
 
     useEffect(() => {
       if (!window.auth) {
@@ -212,22 +215,66 @@
       return unsub;
     }, [user?.uid, roomId]);
 
-    const acceptRoomInvite = () => {
-      if (!pendingRoomInvite) return;
-      // Simple overwrite, not a smart merge: wipe local tracking data first so
-      // the incoming room's data replaces it outright instead of interleaving
-      // with whatever this device had in its own (now-abandoned) room.
-      localStorage.removeItem("ww_sleeps");
-      localStorage.removeItem("ww_feeds");
-      localStorage.removeItem("ww_weights");
-      localStorage.removeItem("ww_deleted_ids");
-      window.dispatchEvent(new Event('ww_local_data_restored'));
-      const url = new URL(window.location);
-      url.searchParams.set('room', pendingRoomInvite);
-      window.history.replaceState({}, '', url);
-      markRoomKnown(pendingRoomInvite);
-      setRoomId(pendingRoomInvite);
+    // Persisted "member left" notices live on the room doc itself (not a push
+    // notification), so a member who was offline when it happened still sees
+    // it next time they open the app — and must explicitly ack it to dismiss.
+    useEffect(() => {
+      if (!user || !window.db || !roomId) { setLeaveNotice(null); return; }
+      const roomRef = window.doc(window.db, "rooms", roomId);
+      const unsub = window.onSnapshot(roomRef, snap => {
+        if (!snap.exists()) { setLeaveNotice(null); return; }
+        const notices = snap.data().leave_notices || {};
+        const pending = Object.entries(notices).find(([, n]) => !(n.ackBy || []).includes(user.uid));
+        setLeaveNotice(pending ? { id: pending[0], ...pending[1] } : null);
+      });
+      return unsub;
+    }, [user?.uid, roomId]);
+
+    const ackLeaveNotice = () => {
+      if (!leaveNotice || !window.db || !roomId || !user) return;
+      const roomRef = window.doc(window.db, "rooms", roomId);
+      window.setDoc(roomRef, {
+        leave_notices: { [leaveNotice.id]: { ackBy: window.arrayUnion(user.uid) } }
+      }, { merge: true }).catch(console.error);
+      setLeaveNotice(null);
+    };
+
+    // Merge-on-join: the guest's local records are folded into the host's room
+    // data instead of overwriting it. Same-ID records are skipped (host's copy
+    // already represents them). Non-overlapping records are simply unioned.
+    // Overlapping-but-not-matching records (beyond a 2min start/end tolerance)
+    // are kept from both sides, with the guest's copy flagged as a conflict
+    // for manual review instead of being silently dropped or auto-resolved.
+    const acceptRoomInvite = async () => {
+      if (!pendingRoomInvite || !window.db) return;
+      const targetRoomId = pendingRoomInvite;
       setPendingRoomInvite(null);
+      try {
+        const roomRef = window.doc(window.db, "rooms", targetRoomId);
+        const snap = await window.getDoc(roomRef);
+        const hostData = snap.exists() ? snap.data() : {};
+
+        const mergedSleeps = mergeOnJoin(loadLS("ww_sleeps", []), hostData.ww_sleeps || [], true);
+        const mergedFeeds = mergeOnJoin(loadLS("ww_feeds", []), hostData.ww_feeds || [], false);
+        const mergedWeights = mergeOnJoin(loadLS("ww_weights", []), hostData.ww_weights || [], false);
+
+        await window.setDoc(roomRef, {
+          ww_sleeps: mergedSleeps, ww_feeds: mergedFeeds, ww_weights: mergedWeights
+        }, { merge: true });
+
+        saveLS("ww_sleeps", mergedSleeps);
+        saveLS("ww_feeds", mergedFeeds);
+        saveLS("ww_weights", mergedWeights);
+        window.dispatchEvent(new Event('ww_local_data_restored'));
+
+        const url = new URL(window.location);
+        url.searchParams.set('room', targetRoomId);
+        window.history.replaceState({}, '', url);
+        markRoomKnown(targetRoomId);
+        setRoomId(targetRoomId);
+      } catch (e) {
+        console.error("Merge on join failed:", e);
+      }
     };
     const declineRoomInvite = () => {
       if (!pendingRoomInvite) return;
@@ -236,7 +283,7 @@
       setPendingRoomInvite(null);
     };
 
-    return <AuthContext.Provider value={{ user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite }}>
+    return <AuthContext.Provider value={{ user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite, leaveNotice, ackLeaveNotice }}>
       {children}
     </AuthContext.Provider>;
   }
@@ -276,6 +323,34 @@
     }
 
     return Array.from(mergedMap.values());
+  }
+
+  // One-time merge used when a guest accepts a room invite. isInterval=true
+  // treats records as [start,end] spans (sleeps); false treats them as point
+  // events (feeds/weights), where start and end are the same instant.
+  function mergeOnJoin(guestList = [], hostList = [], isInterval, tolMs = 2 * 60 * 1000) {
+    const hostIds = new Set((hostList || []).filter(r => r && r.id != null).map(r => String(r.id)));
+    const result = [...(hostList || [])];
+    for (const g of (guestList || [])) {
+      if (!g || g.id == null || hostIds.has(String(g.id))) continue;
+      const gStart = g.start ?? g.date;
+      const gEnd = isInterval ? (g.end ?? Date.now()) : gStart;
+      let duplicate = false, conflict = false;
+      for (const h of (hostList || [])) {
+        if (!h) continue;
+        const hStart = h.start ?? h.date;
+        const hEnd = isInterval ? (h.end ?? Date.now()) : hStart;
+        if (isInterval) {
+          if (gStart <= hEnd && hStart <= gEnd) {
+            if (Math.abs(gStart - hStart) <= tolMs && Math.abs(gEnd - hEnd) <= tolMs) { duplicate = true; break; }
+            conflict = true;
+          }
+        } else if (Math.abs(gStart - hStart) <= tolMs) { duplicate = true; break; }
+      }
+      if (duplicate) continue;
+      result.push(conflict ? { ...g, conflict: true } : g);
+    }
+    return result;
   }
 
   // Pure merge/compare logic, kept separate from the onSnapshot listener in
@@ -449,6 +524,11 @@
 
     return children;
   }
+
+  // App version shown in the About sheet — bump on every meaningful
+  // index.html change. Independent of sw.js's CACHE_NAME, which only
+  // controls asset caching, not user-visible versioning.
+  const APP_VERSION = "1.0.0";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -1460,7 +1540,7 @@
       haptic(12);
       const startTs=dateTimeToTs(editStartDate,editStartTime);
       const endTs=hasEnd?dateTimeToTs(editEndDate,editEndTime):null;
-      setSleeps(prev=>prev.map(s=>s.id===editId?{...s,start:startTs,end:(hasEnd&&endTs>startTs)?endTs:(hasEnd?s.end:null),updatedAt:Date.now()}:s));
+      setSleeps(prev=>prev.map(s=>s.id===editId?{...s,start:startTs,end:(hasEnd&&endTs>startTs)?endTs:(hasEnd?s.end:null),updatedAt:Date.now(),conflict:false}:s));
       setEditSheetOpen(false);
     };
     const deleteFromEditSheet=()=>{haptic(15);setSleeps(prev=>prev.filter(s=>s.id!==editId));setEditSheetOpen(false);};
@@ -1560,6 +1640,7 @@
                   :<div style={{fontSize:18,fontWeight:800,color:T.text}}>{fmtTime(infoSleep.start)} · {lang==="he"?"ישן עכשיו":"sleeping now"}</div>}
               </div>
               <div style={{fontSize:14,color:T.sub,marginBottom:4}}>{S.sleep.duration}: {fmtDur(dur)}</div>
+              {infoSleep.conflict&&<div style={{fontSize:12,color:"#ef4444",fontWeight:700,marginBottom:4}}>🚩 {lang==="he"?"חופף לשינה אחרת — נא לבדוק":"Overlaps another sleep — please review"}</div>}
               <div style={{fontSize:12,color:T.muted}}>{new Date(infoSleep.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{weekday:"long",day:"numeric",month:"short"})}</div>
             </div>;
           })()}
@@ -1606,7 +1687,10 @@
           </>}
           <span style={{fontSize:11,color:T.sub,fontWeight:500,marginInlineStart:"auto"}}>{fmtDur(dur)}</span>
         </div>
-        <div style={{fontSize:11,color:T.sub,marginTop:1}}>{new Date(s.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</div>
+        <div style={{fontSize:11,color:T.sub,marginTop:1,display:"flex",alignItems:"center",gap:5}}>
+          <span>{new Date(s.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</span>
+          {s.conflict&&<span title={lang==="he"?"חופף לשינה אחרת — נא לבדוק":"Overlaps another sleep — please review"} style={{color:"#ef4444",fontWeight:700,fontSize:10.5}}>🚩 {lang==="he"?"חופף":"Overlap"}</span>}
+        </div>
       </div>
     </div>;
   }
@@ -2280,10 +2364,14 @@
         const roomRef = window.doc(window.db, "rooms", roomId);
         const snap = await window.getDoc(roomRef);
         const currentData = snap.exists() ? snap.data() : {};
-        const existingUids = currentData.members || [];
-        const updatedUids = existingUids.filter(id => id !== uid);
+        const leavingProfile = uid === user.uid ? user : (memberProfiles[uid] || {});
+        const leavingName = leavingProfile.displayName || leavingProfile.email || "";
+        const noticeId = crypto.randomUUID();
 
-        await window.setDoc(roomRef, { members: updatedUids }, { merge: true });
+        await window.setDoc(roomRef, {
+          members: window.arrayRemove(uid),
+          leave_notices: { [noticeId]: { uid, name: leavingName, ts: Date.now(), ackBy: [user.uid] } }
+        }, { merge: true });
 
         if (uid === user.uid) {
           const newPrivateRoomId = crypto.randomUUID();
@@ -2572,7 +2660,7 @@
 
   // ─── APP ─────────────────────────────────────────────────────────────────────
   function App(){
-    const { pendingRoomInvite, acceptRoomInvite, declineRoomInvite } = useAuth();
+    const { pendingRoomInvite, acceptRoomInvite, declineRoomInvite, leaveNotice, ackLeaveNotice } = useAuth();
     const[isDark,setIsDark]=useState(()=>{const d=localStorage.getItem("ww_theme")!=="light";document.body.style.background=d?"#0a0f1e":"#faf8f5";return d;});
     const[lang,setLang]=useState(()=>loadLS("ww_lang","he"));
     const[birthDate,setBirthDate]=useSyncState("ww_date","");
@@ -2603,6 +2691,7 @@
     const[activeTab,setActiveTab]=useState("leaps");
     const[installPrompt,setInstallPrompt]=useState(null);
     const[installed,setInstalled]=useState(false);
+    const[aboutOpen,setAboutOpen]=useState(false);
 
     useEffect(()=>saveLS("ww_lang",lang),[lang]);
     useEffect(()=>{window.logAnalyticsEvent("app_visited");},[]);
@@ -2658,6 +2747,24 @@
           </div>
         </div>
       )}
+      {!pendingRoomInvite && leaveNotice && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,zIndex:9999}}>
+          <div style={{maxWidth:360,width:"100%",background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:20,padding:22,textAlign:"center"}}>
+            <div style={{fontSize:34,marginBottom:10}}>👋</div>
+            <h2 style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:10}}>
+              {lang==="he"?"עדכון מהחדר המשותף":"Shared room update"}
+            </h2>
+            <p style={{fontSize:13,color:T.sub,lineHeight:1.6,marginBottom:20}}>
+              {lang==="he"
+                ?`${leaveNotice.name||"שותף"} עזב/ה את החדר המשותף.`
+                :`${leaveNotice.name||"A partner"} left the shared room.`}
+            </p>
+            <button onClick={ackLeaveNotice} style={{width:"100%",padding:"12px 0",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:12,color:"#fff",fontWeight:800,fontSize:14}}>
+              {lang==="he"?"הבנתי":"Got it"}
+            </button>
+          </div>
+        </div>
+      )}
       <style>{`
         @keyframes sl{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:translateX(0)}}
         @keyframes sr{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
@@ -2673,9 +2780,9 @@
         {/* Header */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:38,height:38,borderRadius:12,background:T.accentBg,display:"flex",alignItems:"center",justifyContent:"center",filter:T.glow}}>
+            <button onClick={()=>{haptic(8);setAboutOpen(true);}} style={{width:38,height:38,borderRadius:12,background:T.accentBg,display:"flex",alignItems:"center",justifyContent:"center",filter:T.glow,padding:0,flexShrink:0}}>
               <IconMoonStar size={19} color={T.accentText}/>
-            </div>
+            </button>
             <div><div style={{fontSize:17,fontWeight:900,color:T.h1,letterSpacing:"-.02em",textShadow:T.h1s}}>{S.appName}</div><div style={{fontSize:11,color:T.sub}}>{S.appSub}</div></div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -2686,6 +2793,19 @@
             <AccountBubble T={T} lang={lang}/>
           </div>
         </div>
+
+        <BottomSheet open={aboutOpen} onClose={()=>setAboutOpen(false)} T={T}>
+          <div style={{textAlign:"center",padding:"6px 0 4px"}}>
+            <div style={{width:64,height:64,borderRadius:18,background:T.accentBg,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",filter:T.glow}}>
+              <IconMoonStar size={30} color={T.accentText}/>
+            </div>
+            <div style={{fontSize:18,fontWeight:900,color:T.text,marginBottom:4}}>{S.appName}</div>
+            <div style={{fontSize:12,color:T.sub,marginBottom:16}}>{S.appSub}</div>
+            <div style={{display:"inline-block",padding:"6px 14px",background:T.surface2,borderRadius:20,border:`1px solid ${T.surface2B}`,fontSize:12.5,fontWeight:700,color:T.sub}}>
+              {lang==="he"?`גרסה ${APP_VERSION}`:`Version ${APP_VERSION}`}
+            </div>
+          </div>
+        </BottomSheet>
 
         {/* Tab content */}
         <div key={activeTab} style={{animation:tabAnim===1?"sl .3s cubic-bezier(.22,1,.36,1)":tabAnim===-1?"sr .3s cubic-bezier(.22,1,.36,1)":"fadeUp .3s ease"}}>
