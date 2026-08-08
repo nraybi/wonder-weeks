@@ -59,7 +59,7 @@
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, browserPopupRedirectResolver } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-    import { getFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc, collection, query, where, getDocs, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc, collection, query, where, getDocs, arrayUnion, arrayRemove, runTransaction } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCPMMW6lrGBHCGjiRsdsdPCki_ynE_3Hsc",
@@ -112,15 +112,22 @@
     window.getDocs = getDocs;
     window.arrayUnion = arrayUnion;
     window.arrayRemove = arrayRemove;
+    window.runTransaction = runTransaction;
   </script>
   <script type="text/babel">
   const {useState,useEffect,useCallback,useRef,useMemo}=React;
 
   const AuthContext = React.createContext({ user: null, loading: true, roomId: null, setRoomId: () => {} });
-  function markRoomKnown(id) {
+  // Tracks, per room id, the last time this device considered the room
+  // "dealt with" — either by actively joining/creating it or by declining an
+  // invite to it. A room only re-surfaces as a fresh invite if it has a
+  // members.invited[uid] timestamp newer than this, so being removed and
+  // later re-invited to the SAME room id correctly shows the invite again.
+  function markRoomSeen(id) {
     if (!id) return;
-    const known = loadLS("ww_known_rooms", []);
-    if (!known.includes(id)) saveLS("ww_known_rooms", [...known, id]);
+    const seen = loadLS("ww_room_seen", {});
+    seen[id] = Date.now();
+    saveLS("ww_room_seen", seen);
   }
   function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
@@ -128,6 +135,53 @@
     const [roomId, setRoomId] = useState(() => new URLSearchParams(window.location.search).get('room'));
     const [pendingRoomInvite, setPendingRoomInvite] = useState(null);
     const [leaveNotice, setLeaveNotice] = useState(null);
+
+    // Every user has exactly one durable "home room" at rooms/{uid} — never a
+    // random id. This is the single path that creates or returns to it,
+    // whether for a brand-new user's first room or a user recovering after
+    // being removed from a shared room. Local data is merged in (not
+    // overwritten), and the read-merge-write runs inside a transaction, so
+    // calling this concurrently from multiple tabs/devices for the same user
+    // is safe by construction — no separate locking/dedup needed.
+    const ensureHomeRoom = async (authedUser) => {
+      const homeRoomId = authedUser.uid;
+      const homeRef = window.doc(window.db, "rooms", homeRoomId);
+      const localSleeps = loadLS("ww_sleeps", []);
+      const localFeeds = loadLS("ww_feeds", []);
+      const localWeights = loadLS("ww_weights", []);
+      const localBabyname = loadLS("ww_babyname", "");
+      const localDate = loadLS("ww_date", "");
+
+      const merged = await window.runTransaction(window.db, async (tx) => {
+        const snap = await tx.get(homeRef);
+        const existing = snap.exists() ? snap.data() : {};
+        const mergedSleeps = mergeOnJoin(localSleeps, existing.ww_sleeps || [], true);
+        const mergedFeeds = mergeOnJoin(localFeeds, existing.ww_feeds || [], false);
+        const mergedWeights = mergeOnJoin(localWeights, existing.ww_weights || [], false);
+        tx.set(homeRef, {
+          members: window.arrayUnion(authedUser.uid),
+          ww_sleeps: mergedSleeps,
+          ww_feeds: mergedFeeds,
+          ww_weights: mergedWeights,
+          ww_babyname: existing.ww_babyname || localBabyname,
+          ww_date: existing.ww_date || localDate,
+          created_at: existing.created_at || Date.now()
+        }, { merge: true });
+        return { mergedSleeps, mergedFeeds, mergedWeights };
+      });
+
+      saveLS("ww_sleeps", merged.mergedSleeps);
+      saveLS("ww_feeds", merged.mergedFeeds);
+      saveLS("ww_weights", merged.mergedWeights);
+      window.dispatchEvent(new Event('ww_local_data_restored'));
+
+      markRoomSeen(homeRoomId);
+      setRoomId(homeRoomId);
+      const url = new URL(window.location);
+      url.searchParams.set('room', homeRoomId);
+      window.history.replaceState({}, '', url);
+      return homeRoomId;
+    };
 
     useEffect(() => {
       if (!window.auth) {
@@ -145,7 +199,7 @@
 
           const paramRoomId = new URLSearchParams(window.location.search).get('room');
           if (paramRoomId) {
-            markRoomKnown(paramRoomId);
+            markRoomSeen(paramRoomId);
             setRoomId(paramRoomId);
           } else {
             try {
@@ -157,28 +211,13 @@
               const activeDocs = snap.docs.filter(d => !d.data().scheduled_deletion);
               if (activeDocs.length > 0) {
                 const autoRoomId = activeDocs[0].id;
-                markRoomKnown(autoRoomId);
+                markRoomSeen(autoRoomId);
                 setRoomId(autoRoomId);
                 const url = new URL(window.location);
                 url.searchParams.set('room', autoRoomId);
                 window.history.replaceState({}, '', url);
               } else {
-                const newRoomId = crypto.randomUUID();
-                const initialRoom = {
-                  members: [u.uid],
-                  ww_sleeps: loadLS("ww_sleeps", []),
-                  ww_feeds: loadLS("ww_feeds", []),
-                  ww_weights: loadLS("ww_weights", []),
-                  ww_babyname: loadLS("ww_babyname", ""),
-                  ww_date: loadLS("ww_date", ""),
-                  created_at: Date.now()
-                };
-                await window.setDoc(window.doc(window.db, "rooms", newRoomId), initialRoom);
-                markRoomKnown(newRoomId);
-                setRoomId(newRoomId);
-                const url = new URL(window.location);
-                url.searchParams.set('room', newRoomId);
-                window.history.replaceState({}, '', url);
+                await ensureHomeRoom(u);
               }
             } catch (e) {
               console.error("Auto sync room resolution error:", e);
@@ -191,9 +230,10 @@
 
     // Live invite detection: keep listening for OTHER rooms this account gets
     // added to (e.g. a partner just invited them) while already signed in.
-    // A room only counts as a fresh invite if we've never been in it before
-    // (ww_known_rooms), AND either we've never declined it, or the owner has
-    // invited us again (a newer room.invited[uid] timestamp) since we declined.
+    // A room only counts as a fresh invite if it has no "seen" record, or the
+    // owner has invited us again (a newer room.invited[uid] timestamp) since
+    // we last saw it — this covers both "declined before" and "removed, then
+    // re-invited to the same room id" the same way.
     useEffect(() => {
       if (!user || !window.db || !roomId) return;
       const q = window.query(
@@ -201,19 +241,34 @@
         window.where("members", "array-contains", user.uid)
       );
       const unsub = window.onSnapshot(q, snap => {
-        const known = loadLS("ww_known_rooms", []);
-        const ignored = loadLS("ww_ignored_rooms", {});
+        const seen = loadLS("ww_room_seen", {});
         const candidate = snap.docs.find(d => {
-          if (d.id === roomId || known.includes(d.id) || d.data().scheduled_deletion) return false;
-          const declinedAt = ignored[d.id];
-          if (declinedAt === undefined) return true;
+          if (d.id === roomId || d.data().scheduled_deletion) return false;
+          const seenAt = seen[d.id];
+          if (seenAt === undefined) return true;
           const invitedAt = (d.data().invited || {})[user.uid];
-          return !!invitedAt && invitedAt > declinedAt;
+          return !!invitedAt && invitedAt > seenAt;
         });
         setPendingRoomInvite(candidate ? candidate.id : null);
       });
       return unsub;
     }, [user?.uid, roomId]);
+
+    // Called when this device discovers it's no longer a room member — either
+    // by voluntarily leaving, or by detecting a permission-denied read below
+    // (the room's rules reject us once we're removed from members). Both of
+    // those can fire for the SAME leave event (our own removal write also
+    // trips our own listener's permission check moments later), so recovery
+    // is keyed by the room id being left and deduped via a ref — whichever
+    // path fires first wins and creates exactly one private room; the other
+    // becomes a no-op.
+    // Thin guard around ensureHomeRoom: only proceeds if we're actually
+    // leaving some other room (not already home). Safe to call from multiple
+    // triggers/tabs at once — see ensureHomeRoom.
+    const recoverToPrivateRoom = async (fromRoomId) => {
+      if (!user || !window.db || !fromRoomId || fromRoomId === user.uid) return;
+      await ensureHomeRoom(user);
+    };
 
     // Persisted "member left" notices live on the room doc itself (not a push
     // notification), so a member who was offline when it happened still sees
@@ -226,6 +281,10 @@
         const notices = snap.data().leave_notices || {};
         const pending = Object.entries(notices).find(([, n]) => !(n.ackBy || []).includes(user.uid));
         setLeaveNotice(pending ? { id: pending[0], ...pending[1] } : null);
+      }, err => {
+        // We were removed from this room's members: its security rules now
+        // reject our read. Recover to a private room instead of staying stuck.
+        if (err.code === 'permission-denied') recoverToPrivateRoom(roomId);
       });
       return unsub;
     }, [user?.uid, roomId]);
@@ -270,7 +329,7 @@
         const url = new URL(window.location);
         url.searchParams.set('room', targetRoomId);
         window.history.replaceState({}, '', url);
-        markRoomKnown(targetRoomId);
+        markRoomSeen(targetRoomId);
         setRoomId(targetRoomId);
       } catch (e) {
         console.error("Merge on join failed:", e);
@@ -278,12 +337,11 @@
     };
     const declineRoomInvite = () => {
       if (!pendingRoomInvite) return;
-      const ignored = loadLS("ww_ignored_rooms", {});
-      saveLS("ww_ignored_rooms", { ...ignored, [pendingRoomInvite]: Date.now() });
+      markRoomSeen(pendingRoomInvite);
       setPendingRoomInvite(null);
     };
 
-    return <AuthContext.Provider value={{ user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite, leaveNotice, ackLeaveNotice }}>
+    return <AuthContext.Provider value={{ user, loading, roomId, setRoomId, pendingRoomInvite, acceptRoomInvite, declineRoomInvite, leaveNotice, ackLeaveNotice, recoverToPrivateRoom }}>
       {children}
     </AuthContext.Provider>;
   }
@@ -528,7 +586,7 @@
   // App version shown in the About sheet — bump on every meaningful
   // index.html change. Independent of sw.js's CACHE_NAME, which only
   // controls asset caching, not user-visible versioning.
-  const APP_VERSION = "1.0.0";
+  const APP_VERSION = "1.2.1";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -2238,7 +2296,7 @@
   }
 
   function AccountBubble({ T, lang }) {
-    const { user, loading, roomId, setRoomId } = useAuth();
+    const { user, loading, roomId, setRoomId, recoverToPrivateRoom } = useAuth();
     const [sheetOpen, setSheetOpen] = useState(false);
 
     const [inviteEmail, setInviteEmail] = useState("");
@@ -2362,8 +2420,6 @@
       setRemovingId(uid);
       try {
         const roomRef = window.doc(window.db, "rooms", roomId);
-        const snap = await window.getDoc(roomRef);
-        const currentData = snap.exists() ? snap.data() : {};
         const leavingProfile = uid === user.uid ? user : (memberProfiles[uid] || {});
         const leavingName = leavingProfile.displayName || leavingProfile.email || "";
         const noticeId = crypto.randomUUID();
@@ -2374,23 +2430,8 @@
         }, { merge: true });
 
         if (uid === user.uid) {
-          const newPrivateRoomId = crypto.randomUUID();
-          const newState = {
-            members: [uid],
-            ww_sleeps: currentData.ww_sleeps || loadLS("ww_sleeps", []),
-            ww_feeds: currentData.ww_feeds || loadLS("ww_feeds", []),
-            ww_weights: currentData.ww_weights || loadLS("ww_weights", []),
-            ww_babyname: currentData.ww_babyname || loadLS("ww_babyname", ""),
-            ww_date: currentData.ww_date || loadLS("ww_date", ""),
-            created_at: Date.now()
-          };
-          await window.setDoc(window.doc(window.db, "rooms", newPrivateRoomId), newState);
-
-          setRoomId(newPrivateRoomId);
-          const url = new URL(window.location);
-          url.searchParams.set('room', newPrivateRoomId);
-          window.history.replaceState({}, '', url);
-          setToast({message: lang === "he" ? "יצאת מהחדר המשותף. נוצר עבורך חדר פרטי חדש." : "Left shared room. Created new private room for you.", type:"success"});
+          await recoverToPrivateRoom(roomId);
+          setToast({message: lang === "he" ? "יצאת מהחדר המשותף. עברת לחדר הפרטי שלך." : "Left shared room. Switched to your private room.", type:"success"});
         } else {
           setToast({message: lang === "he" ? "השותף הוסר" : "Member removed", type:"success"});
         }
@@ -2733,8 +2774,8 @@
             </h2>
             <p style={{fontSize:13,color:T.sub,lineHeight:1.6,marginBottom:20}}>
               {lang==="he"
-                ?"שותף הזמין אותך לשתף נתונים בזמן אמת. אישור יחליף את הנתונים שלכם בנתונים של השותף (ללא מיזוג). אפשר לצאת מהחדר בכל שלב."
-                :"A partner invited you to share data in real time. Accepting will overwrite your tracking data with theirs (no merge). You can leave the shared room again at any time."}
+                ?"שותף הזמין אותך לשתף נתונים בזמן אמת. אישור ימזג את הנתונים שלכם עם נתוני השותף — רשומות חופפות שאינן זהות יסומנו 🚩 לבדיקה ידנית. אפשר לצאת מהחדר בכל שלב."
+                :"A partner invited you to share data in real time. Accepting will merge your data with theirs — overlapping-but-different records will be flagged 🚩 for manual review. You can leave the shared room again at any time."}
             </p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={declineRoomInvite} style={{flex:1,padding:"12px 0",background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:12,color:T.sub,fontWeight:700,fontSize:14}}>
