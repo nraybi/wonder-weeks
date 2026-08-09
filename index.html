@@ -129,12 +129,34 @@
     seen[id] = Date.now();
     saveLS("ww_room_seen", seen);
   }
+
+  // Firestore listeners don't self-heal after their error callback fires —
+  // e.g. after a mobile browser suspends the tab for a while and the
+  // underlying stream goes stale on resume — the listener just dies
+  // silently and nothing brings it back. Every onSnapshot in this app pairs
+  // with a retryTick state that's in its effect's dependency array; calling
+  // this on error schedules a bump of that tick after a short delay, which
+  // makes React tear down and recreate the listener from scratch.
+  // permission-denied is intentionally excluded: a single denial from an
+  // aging stream can be a stale-auth-token artifact rather than a real
+  // membership loss, so callers that care (see the leave-notice listener)
+  // verify with a fresh one-time read before treating it as real; callers
+  // that don't own that decision just stop retrying and wait for roomId to
+  // change on its own once the dedicated listener resolves it.
+  function scheduleSnapshotRetry(label, err, setRetryTick) {
+    console.error(`Snapshot error (${label}):`, err);
+    if (err && err.code === 'permission-denied') return null;
+    return setTimeout(() => setRetryTick(t => t + 1), 3000);
+  }
+
   function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [roomId, setRoomId] = useState(() => new URLSearchParams(window.location.search).get('room'));
     const [pendingRoomInvite, setPendingRoomInvite] = useState(null);
     const [leaveNotice, setLeaveNotice] = useState(null);
+    const [inviteRetryTick, setInviteRetryTick] = useState(0);
+    const [leaveRetryTick, setLeaveRetryTick] = useState(0);
 
     // Every user has exactly one durable "home room" at rooms/{uid} — never a
     // random id. This is the single path that creates or returns to it,
@@ -199,8 +221,34 @@
 
           const paramRoomId = new URLSearchParams(window.location.search).get('room');
           if (paramRoomId) {
-            markRoomSeen(paramRoomId);
-            setRoomId(paramRoomId);
+            // Don't blindly trust the URL: it can point at a room this
+            // device is no longer a member of (removed since the URL was
+            // set) or was never a member of at all. Verifying first — rather
+            // than adopting it and letting AuthGuard's separate, one-time
+            // check discover the problem afterward — avoids a race where
+            // AuthGuard's faster denial can render a blocking "Access
+            // Denied" screen before our own recovery has a chance to run.
+            try {
+              await window.getDoc(window.doc(window.db, "rooms", paramRoomId));
+              // Read succeeded, which under these security rules is only
+              // possible if we're actually a member (or the room doesn't
+              // exist yet at all).
+              markRoomSeen(paramRoomId);
+              setRoomId(paramRoomId);
+            } catch (e) {
+              // Denied: either a genuinely foreign link, or we were removed
+              // since this URL was set. If this device previously dealt
+              // with this room, treat it as the latter and recover silently
+              // instead of showing Access Denied for a room we legitimately
+              // left. Otherwise, adopt it anyway so AuthGuard's existing
+              // denial screen explains it (a real unauthorized link).
+              const seen = loadLS("ww_room_seen", {});
+              if (seen[paramRoomId] !== undefined) {
+                await ensureHomeRoom(u);
+              } else {
+                setRoomId(paramRoomId);
+              }
+            }
           } else {
             try {
               const q = window.query(
@@ -236,6 +284,7 @@
     // re-invited to the same room id" the same way.
     useEffect(() => {
       if (!user || !window.db || !roomId) return;
+      let retryTimer = null;
       const q = window.query(
         window.collection(window.db, "rooms"),
         window.where("members", "array-contains", user.uid)
@@ -250,9 +299,11 @@
           return !!invitedAt && invitedAt > seenAt;
         });
         setPendingRoomInvite(candidate ? candidate.id : null);
+      }, err => {
+        retryTimer = scheduleSnapshotRetry("invite-detection", err, setInviteRetryTick);
       });
-      return unsub;
-    }, [user?.uid, roomId]);
+      return () => { unsub(); if (retryTimer) clearTimeout(retryTimer); };
+    }, [user?.uid, roomId, inviteRetryTick]);
 
     // Called when this device discovers it's no longer a room member — either
     // by voluntarily leaving, or by detecting a permission-denied read below
@@ -275,19 +326,32 @@
     // it next time they open the app — and must explicitly ack it to dismiss.
     useEffect(() => {
       if (!user || !window.db || !roomId) { setLeaveNotice(null); return; }
+      let retryTimer = null;
       const roomRef = window.doc(window.db, "rooms", roomId);
       const unsub = window.onSnapshot(roomRef, snap => {
         if (!snap.exists()) { setLeaveNotice(null); return; }
         const notices = snap.data().leave_notices || {};
         const pending = Object.entries(notices).find(([, n]) => !(n.ackBy || []).includes(user.uid));
         setLeaveNotice(pending ? { id: pending[0], ...pending[1] } : null);
-      }, err => {
-        // We were removed from this room's members: its security rules now
-        // reject our read. Recover to a private room instead of staying stuck.
-        if (err.code === 'permission-denied') recoverToPrivateRoom(roomId);
+      }, async (err) => {
+        if (err && err.code === 'permission-denied') {
+          // Don't trust a single denial from this listener: a stale auth
+          // token after the device wakes from being backgrounded/suspended
+          // can also surface as permission-denied even though we're still a
+          // legitimate member. Confirm with a fresh one-time read first.
+          try {
+            const freshSnap = await window.getDoc(roomRef);
+            const stillMember = freshSnap.exists() && (freshSnap.data().members || []).includes(user.uid);
+            if (!stillMember) { recoverToPrivateRoom(roomId); return; }
+          } catch (e) {
+            recoverToPrivateRoom(roomId); // fresh read denied too: genuinely removed
+            return;
+          }
+        }
+        retryTimer = scheduleSnapshotRetry("leave-notices", err, setLeaveRetryTick);
       });
-      return unsub;
-    }, [user?.uid, roomId]);
+      return () => { unsub(); if (retryTimer) clearTimeout(retryTimer); };
+    }, [user?.uid, roomId, leaveRetryTick]);
 
     const ackLeaveNotice = () => {
       if (!leaveNotice || !window.db || !roomId || !user) return;
@@ -439,6 +503,7 @@
   function useSyncState(key, initialValue) {
     const { roomId, user } = useAuth();
     const [state, setState] = useState(() => loadLS(key, initialValue));
+    const [retryTick, setRetryTick] = useState(0);
 
     useEffect(() => {
       const handleLocalRestored = () => {
@@ -453,6 +518,7 @@
 
     useEffect(() => {
       if (!roomId || !user || !window.db) return;
+      let retryTimer = null;
 
       const roomRef = window.doc(window.db, "rooms", roomId);
       const unsubscribe = window.onSnapshot(roomRef, (docSnap) => {
@@ -486,11 +552,11 @@
           }
         }
       }, (err) => {
-        console.error("Snapshot error for", key, err);
+        retryTimer = scheduleSnapshotRetry(`sync:${key}`, err, setRetryTick);
       });
 
-      return () => unsubscribe();
-    }, [roomId, user?.uid, key]);
+      return () => { unsubscribe(); if (retryTimer) clearTimeout(retryTimer); };
+    }, [roomId, user?.uid, key, retryTick]);
 
     const setSyncedState = useCallback((newValue) => {
       setState(prev => {
@@ -586,7 +652,7 @@
   // App version shown in the About sheet — bump on every meaningful
   // index.html change. Independent of sw.js's CACHE_NAME, which only
   // controls asset caching, not user-visible versioning.
-  const APP_VERSION = "1.2.1";
+  const APP_VERSION = "1.3.1";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -2308,6 +2374,7 @@
 
     const [roomMembers, setRoomMembers] = useState([]);
     const [memberProfiles, setMemberProfiles] = useState({});
+    const [membersRetryTick, setMembersRetryTick] = useState(0);
 
     useEffect(() => {
       if (inviteEmail.trim().length <= 2 || !window.db) {
@@ -2336,15 +2403,18 @@
 
     useEffect(() => {
       if (!roomId || !window.db) { setRoomMembers([]); return; }
+      let retryTimer = null;
       const roomRef = window.doc(window.db, "rooms", roomId);
       const unsub = window.onSnapshot(roomRef, snap => {
         if (snap.exists()) {
           const data = snap.data();
           setRoomMembers(data.members || []);
         }
+      }, err => {
+        retryTimer = scheduleSnapshotRetry("room-members", err, setMembersRetryTick);
       });
-      return unsub;
-    }, [roomId]);
+      return () => { unsub(); if (retryTimer) clearTimeout(retryTimer); };
+    }, [roomId, membersRetryTick]);
 
     useEffect(() => {
       const missing = roomMembers.filter(uid => !memberProfiles[uid]);
