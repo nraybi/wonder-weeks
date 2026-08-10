@@ -321,6 +321,30 @@
       await ensureHomeRoom(user);
     };
 
+    // Mobile PWAs can freeze JS execution while backgrounded/suspended —
+    // existing onSnapshot listeners live through that freeze in memory and
+    // aren't guaranteed to promptly re-signal an error on resume (unlike a
+    // fresh page load, which re-verifies membership before ever adopting a
+    // room — see the auth effect above). This is a belt-and-suspenders check
+    // that runs whenever the tab regains visibility: independent of whatever
+    // the live listeners already did, re-confirm the current room is still
+    // accessible and recover immediately if not. ensureHomeRoom is
+    // idempotent, so this is harmless even if a listener already recovered.
+    useEffect(() => {
+      if (!user || !window.db) return;
+      const checkOnResume = async () => {
+        if (document.visibilityState !== 'visible' || !roomId || roomId === user.uid) return;
+        try {
+          await window.getDoc(window.doc(window.db, "rooms", roomId));
+        } catch (e) {
+          console.error("Room membership check failed on resume:", e);
+          await ensureHomeRoom(user);
+        }
+      };
+      document.addEventListener('visibilitychange', checkOnResume);
+      return () => document.removeEventListener('visibilitychange', checkOnResume);
+    }, [user?.uid, roomId]);
+
     // Persisted "member left" notices live on the room doc itself (not a push
     // notification), so a member who was offline when it happened still sees
     // it next time they open the app — and must explicitly ack it to dismiss.
@@ -652,7 +676,7 @@
   // App version shown in the About sheet — bump on every meaningful
   // index.html change. Independent of sw.js's CACHE_NAME, which only
   // controls asset caching, not user-visible versioning.
-  const APP_VERSION = "1.3.1";
+  const APP_VERSION = "1.3.2";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -2470,7 +2494,7 @@
         const uids = snap.exists() ? (snap.data().members || []) : [];
         const payload = { [`invited.${targetUser.id}`]: Date.now() };
         if (!uids.includes(targetUser.id)) {
-          payload.members = [...uids, targetUser.id];
+          payload.members = window.arrayUnion(targetUser.id);
         }
         await window.setDoc(roomRef, payload, { merge: true });
 
