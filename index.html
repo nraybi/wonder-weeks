@@ -676,7 +676,7 @@
   // App version shown in the About sheet — bump on every meaningful
   // index.html change. Independent of sw.js's CACHE_NAME, which only
   // controls asset caching, not user-visible versioning.
-  const APP_VERSION = "1.3.2";
+  const APP_VERSION = "1.4.1";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -905,6 +905,17 @@
   function tsToDateStr(ts){const d=new Date(ts);const p=n=>String(n).padStart(2,"0");return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
   function tsToTimeStr(ts){const d=new Date(ts);const p=n=>String(n).padStart(2,"0");return`${p(d.getHours())}:${p(d.getMinutes())}`;}
   function dateTimeToTs(dateStr,timeStr){return new Date(`${dateStr}T${timeStr}`).getTime();}
+
+  // ─── BOTTLE SITTINGS (a prepared bottle consumed across multiple sittings) ──
+  // Every read site (history row, info popup, CSV, daily total) goes through
+  // these two — never f.amount/f.sittings directly — so old flat records
+  // (no .sittings field) keep working without any data migration.
+  function bottleSittingsOf(f){
+    return f.sittings||[{id:String(f.id),start:f.start,amount:f.amount??null}];
+  }
+  function bottleTotalMl(f){
+    return bottleSittingsOf(f).reduce((a,s)=>a+(s.amount||0),0);
+  }
 
   // NOAA solar calculation — returns {sunriseMin, sunsetMin} in local minutes-of-day
   function calcSunTimes(lat,lng,date){
@@ -1684,17 +1695,33 @@
       else{setHasEnd(false); setEditEndDate(tsToDateStr(now)); setEditEndTime(tsToTimeStr(now));}
       setEditSheetOpen(true);
     };
+    // Quick-add: log a sleep that already happened without going through the
+    // live start/stop toggle. Reuses the same sheet in create mode (editId
+    // null) — Start and End both default to now, so both need adjusting.
+    const openAddSleepSheet=()=>{
+      haptic(10);
+      setEditId(null);
+      const n=Date.now();
+      setEditStartDate(tsToDateStr(n)); setEditStartTime(tsToTimeStr(n));
+      setHasEnd(true); setEditEndDate(tsToDateStr(n)); setEditEndTime(tsToTimeStr(n));
+      setEditSheetOpen(true);
+    };
     const saveEditSleep=()=>{
       haptic(12);
       const startTs=dateTimeToTs(editStartDate,editStartTime);
       const endTs=hasEnd?dateTimeToTs(editEndDate,editEndTime):null;
-      setSleeps(prev=>prev.map(s=>s.id===editId?{...s,start:startTs,end:(hasEnd&&endTs>startTs)?endTs:(hasEnd?s.end:null),updatedAt:Date.now(),conflict:false}:s));
+      if(editId){
+        setSleeps(prev=>prev.map(s=>s.id===editId?{...s,start:startTs,end:(hasEnd&&endTs>startTs)?endTs:(hasEnd?s.end:null),updatedAt:Date.now(),conflict:false}:s));
+      } else {
+        setSleeps(prev=>[...prev,{id:Date.now(),start:startTs,end:(hasEnd&&endTs>startTs)?endTs:null,updatedAt:Date.now()}]);
+        window.logAnalyticsEvent("record_added",{type:"sleep"});
+      }
       setEditSheetOpen(false);
     };
     const deleteFromEditSheet=()=>{haptic(15);setSleeps(prev=>prev.filter(s=>s.id!==editId));setEditSheetOpen(false);};
 
     return(
-      <div style={{display:"flex",flexDirection:"column",gap:14,padding:"0 0 16px"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:14,padding:"0 0 76px"}}>
         {/* Circular timeline hero */}
         <div style={{background:"linear-gradient(135deg,#0d0f2b,#151832)",borderRadius:24,padding:"20px 0 16px",border:"1px solid rgba(99,102,241,.2)",boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}>
           <CircularTimeline sleeps={sleeps} activeSleep={activeSleep} nextPred={nextSleepPred} now={now} onToggle={toggleSleep} S={S} lang={lang} sunTimes={sunTimes}/>
@@ -1754,7 +1781,7 @@
 
         {/* Edit sleep bottom sheet */}
         <BottomSheet open={editSheetOpen} onClose={()=>setEditSheetOpen(false)} T={T}>
-          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:16,textAlign:"center"}}>{lang==="he"?"עריכת שינה":"Edit Sleep"}</div>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:16,textAlign:"center"}}>{editId?(lang==="he"?"עריכת שינה":"Edit Sleep"):(lang==="he"?"הוספת שינה":"Add Sleep")}</div>
           <div style={{marginBottom:12}}>
             <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>🕐 {lang==="he"?"התחלה":"Start"}</div>
             <DateTimeField dateStr={editStartDate} timeStr={editStartTime} onDateChange={setEditStartDate} onTimeChange={setEditStartTime} T={T} lang={lang} maxDate={todayDateStr}/>
@@ -1769,9 +1796,9 @@
             {hasEnd&&<DateTimeField dateStr={editEndDate} timeStr={editEndTime} onDateChange={setEditEndDate} onTimeChange={setEditEndTime} T={T} lang={lang} maxDate={todayDateStr}/>}
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={deleteFromEditSheet} style={{padding:"0 18px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {editId&&<button onClick={deleteFromEditSheet} style={{padding:"0 18px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
               <IconTrash size={17} color="#ef4444"/>
-            </button>
+            </button>}
             <button onClick={saveEditSleep} style={{flex:1,padding:14,background:"linear-gradient(135deg,#7c3aed,#6366f1)",border:"none",borderRadius:14,color:"#fff",fontSize:15,fontWeight:800,boxShadow:"0 4px 20px rgba(99,102,241,.4)"}}>{lang==="he"?"שמור":"Save"}</button>
           </div>
         </BottomSheet>
@@ -1793,6 +1820,11 @@
             </div>;
           })()}
         </BottomSheet>
+
+        {/* Quick-add FAB — log a sleep that already happened, without the live start/stop toggle */}
+        <button onClick={openAddSleepSheet} aria-label={lang==="he"?"הוספת שינה":"Add Sleep"} style={{position:"fixed",bottom:"calc(90px + env(safe-area-inset-bottom,0px))",insetInlineEnd:20,zIndex:200,width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#7c3aed,#6366f1)",border:"none",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 6px 24px rgba(99,102,241,.45)"}}>
+          <IconPlus size={24}/>
+        </button>
       </div>
     );
   }
@@ -1853,6 +1885,11 @@
     const[feedNote,setFeedNote]=useState("");
     const[feedDate,setFeedDate]=useState(()=>tsToDateStr(Date.now()));
     const[feedTimeOnly,setFeedTimeOnly]=useState(()=>tsToTimeStr(Date.now()));
+    // Sittings being edited for an existing bottle: [{id,timeStr,amount}].
+    // Only populated when editingId && feedType==="bottle" — a fresh bottle
+    // (no editingId) still uses the plain Prepared+Consumed fields above.
+    const[sittingsDraft,setSittingsDraft]=useState([]);
+    const draftFromSitting=s=>({id:s.id!=null?String(s.id):crypto.randomUUID(),timeStr:tsToTimeStr(s.start),amount:s.amount!=null?String(s.amount):""});
 
     // ── Read-only info popup (tap on a pattern-grid dot) ──
     const[infoFeed,setInfoFeed]=useState(null);
@@ -1881,12 +1918,18 @@
       if(!weights.length)return null;
       return[...weights].sort((a,b)=>b.date-a.date)[0].kg;
     },[weights]);
-    const bottleTodayMl=useMemo(()=>todayFeeds.filter(f=>f.type==="bottle"&&f.amount).reduce((a,f)=>a+f.amount,0),[todayFeeds]);
+    // Daily total is the one place that sums by each SITTING's own timestamp,
+    // not the record's — a sitting logged just now counts today even if the
+    // bottle was prepared yesterday. So this scans `feeds`, not `todayFeeds`.
+    const bottleTodayMl=useMemo(()=>feeds.reduce((total,f)=>{
+      if(f.type!=="bottle")return total;
+      return total+bottleSittingsOf(f).filter(s=>s.start>=todayStart).reduce((a,s)=>a+(s.amount||0),0);
+    },0),[feeds,todayStart]);
     const recommendedMl=latestWeightKg?Math.min(150*latestWeightKg,960):null;
 
     const openAddSheet=()=>{
       haptic(10);
-      setEditingId(null); setFeedType("breast"); setFeedAmt(""); setFeedPrepared(""); setFeedNote("");
+      setEditingId(null); setFeedType("breast"); setFeedAmt(""); setFeedPrepared(""); setFeedNote(""); setSittingsDraft([]);
       setFeedDate(tsToDateStr(Date.now())); setFeedTimeOnly(tsToTimeStr(Date.now()));
       setSheetOpen(true);
     };
@@ -1894,14 +1937,65 @@
       haptic(8);
       setEditingId(f.id); setFeedType(f.type); setFeedAmt(f.amount?String(f.amount):""); setFeedPrepared(f.prepared?String(f.prepared):""); setFeedNote(f.note||"");
       setFeedDate(tsToDateStr(f.start)); setFeedTimeOnly(tsToTimeStr(f.start));
+      setSittingsDraft(f.type==="bottle"?bottleSittingsOf(f).map(draftFromSitting):[]);
       setSheetOpen(true);
+    };
+    // Row-level quick-add (§3 discoverability): opens the same edit sheet as
+    // openEditSheet, but with a new empty sitting already appended and ready
+    // to fill in — no need to dig into the sheet to add one.
+    const openQuickAddSitting=f=>{
+      haptic(8);
+      setEditingId(f.id); setFeedType("bottle"); setFeedAmt(""); setFeedPrepared(f.prepared?String(f.prepared):""); setFeedNote(f.note||"");
+      setFeedDate(tsToDateStr(f.start)); setFeedTimeOnly(tsToTimeStr(f.start));
+      setSittingsDraft([...bottleSittingsOf(f).map(draftFromSitting),{id:crypto.randomUUID(),timeStr:tsToTimeStr(Date.now()),amount:""}]);
+      setSheetOpen(true);
+    };
+    const addSittingRow=()=>{haptic(6);setSittingsDraft(prev=>[...prev,{id:crypto.randomUUID(),timeStr:tsToTimeStr(Date.now()),amount:""}]);};
+    const removeSittingRow=sid=>{haptic(10);setSittingsDraft(prev=>prev.length>1?prev.filter(s=>s.id!==sid):prev);};
+    const updateSittingTime=(sid,val)=>setSittingsDraft(prev=>prev.map(s=>s.id===sid?{...s,timeStr:val}:s));
+    // Clamp to remaining capacity (prepared − every OTHER sitting's amount) as
+    // the person types, so it's structurally impossible to save over prepared.
+    const updateSittingAmount=(sid,val)=>{
+      setSittingsDraft(prev=>{
+        if(val===""||!feedPrepared)return prev.map(s=>s.id===sid?{...s,amount:val}:s);
+        const preparedNum=parseInt(feedPrepared)||0;
+        const othersSum=prev.filter(s=>s.id!==sid).reduce((a,s)=>a+(parseInt(s.amount)||0),0);
+        const remaining=Math.max(0,preparedNum-othersSum);
+        const clamped=Math.max(0,Math.min(parseInt(val)||0,remaining));
+        return prev.map(s=>s.id===sid?{...s,amount:String(clamped)}:s);
+      });
+    };
+    // Same clamp for the single Consumed field on the new-bottle creation flow.
+    const updateConsumed=val=>{
+      if(val===""||!feedPrepared){setFeedAmt(val);return;}
+      const preparedNum=parseInt(feedPrepared)||0;
+      setFeedAmt(String(Math.max(0,Math.min(parseInt(val)||0,preparedNum))));
     };
     const saveFeed=()=>{
       haptic(15);
       const ts=dateTimeToTs(feedDate,feedTimeOnly);
-      const amt=feedAmt?parseInt(feedAmt):null;
       const prep=feedPrepared?parseInt(feedPrepared):null;
       const note=feedNote.trim()?feedNote.trim():null;
+
+      if(feedType==="bottle"&&editingId&&sittingsDraft.length){
+        const sittings=sittingsDraft
+          .map(s=>({id:s.id,start:dateTimeToTs(feedDate,s.timeStr),amount:s.amount!==""?parseInt(s.amount):null}))
+          .sort((a,b)=>a.start-b.start);
+        const latestStart=sittings[sittings.length-1].start; // record.start tracks the latest sitting, not creation time
+        setFeeds(prev=>prev.map(f=>f.id===editingId?{...f,type:"bottle",prepared:prep,amount:null,sittings,note,start:latestStart,updatedAt:Date.now()}:f));
+        setSheetOpen(false);
+        return;
+      }
+
+      const amt=feedAmt?parseInt(feedAmt):null;
+      if(feedType==="bottle"&&!editingId){
+        const sittings=[{id:crypto.randomUUID(),start:ts,amount:amt}];
+        setFeeds(prev=>[...prev,{id:Date.now(),start:ts,type:"bottle",prepared:prep,amount:null,sittings,note,updatedAt:Date.now()}]);
+        window.logAnalyticsEvent("record_added",{type:"feed"});
+        setSheetOpen(false);
+        return;
+      }
+
       if(editingId)setFeeds(prev=>prev.map(f=>f.id===editingId?{...f,type:feedType,amount:amt,prepared:prep,note,start:ts,updatedAt:Date.now()}:f));
       else {setFeeds(prev=>[...prev,{id:Date.now(),start:ts,type:feedType,amount:amt,prepared:prep,note,updatedAt:Date.now()}]);window.logAnalyticsEvent("record_added",{type:"feed"});}
       setSheetOpen(false);
@@ -1909,16 +2003,15 @@
     const deleteFeed=id=>setFeeds(prev=>prev.filter(f=>f.id!==id));
     const deleteFromSheet=()=>{haptic(15);setFeeds(prev=>prev.filter(f=>f.id!==editingId));setSheetOpen(false);};
 
+    // §6 warning: earliest sitting among the CURRENT drafted sittings,
+    // recomputed live as times are edited (not fixed to whichever was first).
+    const firstSittingTs=sittingsDraft.length?Math.min(...sittingsDraft.map(s=>dateTimeToTs(feedDate,s.timeStr))):null;
+
     const typeEmoji={breast:"🤱",bottle:"🍼",solid:"🥣"};
     const todayDateStr=tsToDateStr(Date.now());
 
     return(
-      <div style={{display:"flex",flexDirection:"column",gap:12,padding:"0 0 16px"}}>
-        {/* FAB-style log button */}
-        <button onClick={openAddSheet} style={{width:"100%",padding:16,background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:18,color:"#fff",fontSize:16,fontWeight:800,boxShadow:"0 6px 24px rgba(249,115,22,.45)",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          <IconPlus size={20}/>{S.feed.logFeed}
-        </button>
-
+      <div style={{display:"flex",flexDirection:"column",gap:12,padding:"0 0 76px"}}>
         {/* Stats */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <StatCard icon="⏭️" label={S.feed.nextFeed} value={nextFeedIn!==null?(nextFeedIn<60?nextFeedIn+"ד׳":Math.round(nextFeedIn/60)+"ש׳"):"—"} sub={lastFeed?`${lang==="he"?"אחרון":"Last"}: ${fmtTime(lastFeed.start)}`:"—"} T={T}/>
@@ -1968,7 +2061,7 @@
                       <DayGroup key={dayKey(g.dayStart)} T={T} dayStart={g.dayStart} lang={lang} accent={c} defaultOpen={gi===0} summary={countLabel}>
                         {g.entries.map(f=>(
                           <SwipeableRow key={f.id} T={T} onDelete={()=>deleteFeed(f.id)} onTap={()=>openEditSheet(f)}>
-                            <FeedRow f={f} T={T} S={S} typeEmoji={typeEmoji} lang={lang} dayColor={c}/>
+                            <FeedRow f={f} T={T} S={S} typeEmoji={typeEmoji} lang={lang} dayColor={c} onQuickAdd={openQuickAddSitting}/>
                           </SwipeableRow>
                         ))}
                       </DayGroup>
@@ -1985,12 +2078,12 @@
           </div>
           <div style={{display:"flex",gap:8,marginBottom:14}}>
             {Object.entries(S.feed.types).map(([k,v])=>(
-              <button key={k} onClick={()=>{haptic(8);setFeedType(k);}} style={{flex:1,padding:"12px 0",background:feedType===k?"linear-gradient(135deg,#f97316,#ea580c)":T.surface2,border:`1px solid ${feedType===k?"#f97316":T.surface2B}`,borderRadius:13,color:feedType===k?"#fff":T.text,fontSize:13,fontWeight:700}}>
+              <button key={k} onClick={()=>{haptic(8);setFeedType(k);if(editingId&&k==="bottle"&&sittingsDraft.length===0)setSittingsDraft([{id:crypto.randomUUID(),timeStr:feedTimeOnly,amount:""}]);}} style={{flex:1,padding:"12px 0",background:feedType===k?"linear-gradient(135deg,#f97316,#ea580c)":T.surface2,border:`1px solid ${feedType===k?"#f97316":T.surface2B}`,borderRadius:13,color:feedType===k?"#fff":T.text,fontSize:13,fontWeight:700}}>
                 <div style={{fontSize:20,marginBottom:2}}>{typeEmoji[k]}</div>{v}
               </button>
             ))}
           </div>
-          {feedType==="bottle"&&(
+          {feedType==="bottle"&&!editingId&&(
             <div style={{display:"flex",gap:8,marginBottom:14}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>{S.feed.prepared}</div>
@@ -2002,8 +2095,39 @@
                   <div style={{fontSize:11,fontWeight:700,color:T.sub}}>{S.feed.consumed}</div>
                   {feedPrepared&&<button onClick={()=>{haptic(6);setFeedAmt(feedPrepared);}} style={{fontSize:9.5,fontWeight:700,color:T.feedColor,background:"none",padding:"0 2px"}}>{S.feed.finishedAll}</button>}
                 </div>
-                <input type="number" inputMode="numeric" placeholder="0" value={feedAmt} onChange={e=>setFeedAmt(e.target.value)}
+                <input type="number" inputMode="numeric" placeholder="0" value={feedAmt} onChange={e=>updateConsumed(e.target.value)}
                   style={{width:"100%",padding:"11px 10px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:16,fontWeight:700,outline:"none",textAlign:"center"}}/>
+              </div>
+            </div>
+          )}
+          {feedType==="bottle"&&editingId&&(
+            <div style={{marginBottom:14}}>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>{S.feed.prepared}</div>
+                <input type="number" inputMode="numeric" placeholder="0" value={feedPrepared} onChange={e=>setFeedPrepared(e.target.value)}
+                  style={{width:"100%",padding:"11px 10px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:16,fontWeight:700,outline:"none",textAlign:"center"}}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {sittingsDraft.map(s=>{
+                  const isLate=firstSittingTs!=null&&(dateTimeToTs(feedDate,s.timeStr)-firstSittingTs)>3600000;
+                  return(
+                    <div key={s.id}>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <input type="time" value={s.timeStr} onChange={e=>updateSittingTime(s.id,e.target.value)}
+                          style={{flex:1,padding:"10px 8px",background:T.input,border:`1px solid ${isLate?"#f59e0b":T.inputB}`,borderRadius:12,color:T.inputText,fontSize:15,fontWeight:700,outline:"none",colorScheme:T.ds,textAlign:"center"}}/>
+                        <input type="number" inputMode="numeric" placeholder="0" value={s.amount} onChange={e=>updateSittingAmount(s.id,e.target.value)}
+                          style={{flex:1,padding:"10px 8px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:12,color:T.inputText,fontSize:15,fontWeight:700,outline:"none",textAlign:"center"}}/>
+                        <button onClick={()=>removeSittingRow(s.id)} disabled={sittingsDraft.length===1} style={{flexShrink:0,padding:"9px 10px",background:sittingsDraft.length===1?"rgba(128,128,128,.12)":"rgba(239,68,68,.12)",border:`1px solid ${sittingsDraft.length===1?"transparent":"rgba(239,68,68,.3)"}`,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",opacity:sittingsDraft.length===1?.4:1}}>
+                          <IconTrash size={14} color={sittingsDraft.length===1?T.sub:"#ef4444"}/>
+                        </button>
+                      </div>
+                      {isLate&&<div style={{fontSize:10.5,color:"#f59e0b",marginTop:4,paddingInlineStart:2}}>⚠️ {lang==="he"?"יותר משעה אחרי המנה הראשונה":"More than 1 hour after the first sitting"}</div>}
+                    </div>
+                  );
+                })}
+                <button onClick={addSittingRow} style={{padding:"10px 0",background:T.surface2,border:`1px dashed ${T.surface2B}`,borderRadius:12,color:T.feedColor,fontSize:12.5,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  <IconPlus size={14} color={T.feedColor}/>{lang==="he"?"הוסף מנה":"Add Sitting"}
+                </button>
               </div>
             </div>
           )}
@@ -2014,10 +2138,18 @@
                 style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:14,outline:"none"}}/>
             </div>
           )}
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>🕐 {lang==="he"?"שעה":"Time"}</div>
-            <DateTimeField dateStr={feedDate} timeStr={feedTimeOnly} onDateChange={setFeedDate} onTimeChange={setFeedTimeOnly} T={T} lang={lang} maxDate={todayDateStr}/>
-          </div>
+          {feedType==="bottle"&&editingId?(
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>📅 {lang==="he"?"תאריך":"Date"}</div>
+              <input type="date" value={feedDate} max={todayDateStr} onChange={e=>setFeedDate(e.target.value)}
+                style={{width:"100%",padding:"11px 14px",background:T.input,border:`1px solid ${T.inputB}`,borderRadius:13,color:T.inputText,fontSize:15,outline:"none",colorScheme:T.ds}}/>
+            </div>
+          ):(
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:6}}>🕐 {lang==="he"?"שעה":"Time"}</div>
+              <DateTimeField dateStr={feedDate} timeStr={feedTimeOnly} onDateChange={setFeedDate} onTimeChange={setFeedTimeOnly} T={T} lang={lang} maxDate={todayDateStr}/>
+            </div>
+          )}
           <div style={{display:"flex",gap:8}}>
             {editingId&&<button onClick={deleteFromSheet} style={{padding:"0 18px",background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.3)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
               <IconTrash size={17} color="#ef4444"/>
@@ -2029,40 +2161,80 @@
         {/* Read-only info popup for pattern-grid taps */}
         <BottomSheet open={!!infoFeed} onClose={()=>setInfoFeed(null)} T={T}>
           {infoFeed&&(()=>{
-            const hasBoth=infoFeed.prepared&&infoFeed.amount&&infoFeed.prepared!==infoFeed.amount;
-            const singleMl=infoFeed.amount??infoFeed.prepared;
+            const isBottle=infoFeed.type==="bottle";
+            const totalMl=isBottle?bottleTotalMl(infoFeed):null;
+            const sittingsCount=isBottle?bottleSittingsOf(infoFeed).length:1;
+            const hasBoth=isBottle?(infoFeed.prepared&&totalMl&&infoFeed.prepared!==totalMl):(infoFeed.prepared&&infoFeed.amount&&infoFeed.prepared!==infoFeed.amount);
+            const singleMl=isBottle?(totalMl||infoFeed.prepared||null):(infoFeed.amount??infoFeed.prepared);
+            const consumedMl=isBottle?totalMl:infoFeed.amount;
             return<div style={{textAlign:"center",padding:"4px 0 6px"}}>
               <div style={{fontSize:32,marginBottom:8}}>{typeEmoji[infoFeed.type]||"🍼"}</div>
               <div style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:6}}>{fmtTime(infoFeed.start)} · {S.feed.types[infoFeed.type]}</div>
-              {singleMl?<div style={{fontSize:14,color:T.sub,marginBottom:4}}>{hasBoth?`${infoFeed.amount}/${infoFeed.prepared} ${lang==="he"?"מ״ל":"ml"}`:`${singleMl} ${lang==="he"?"מ״ל":"ml"}`}</div>:null}
+              {singleMl?<div style={{fontSize:14,color:T.sub,marginBottom:4}}>{hasBoth?`${consumedMl}/${infoFeed.prepared} ${lang==="he"?"מ״ל":"ml"}`:`${singleMl} ${lang==="he"?"מ״ל":"ml"}`}</div>:null}
+              {sittingsCount>1&&<div style={{fontSize:12,color:T.muted,marginBottom:4}}>{sittingsCount} {lang==="he"?"מנות":"sittings"}</div>}
               {infoFeed.note&&<div style={{fontSize:13,color:T.muted,fontStyle:"italic",marginBottom:4}}>"{infoFeed.note}"</div>}
               <div style={{fontSize:12,color:T.muted}}>{new Date(infoFeed.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{weekday:"long",day:"numeric",month:"short"})}</div>
             </div>;
           })()}
         </BottomSheet>
+
+        {/* Log Feed FAB — reachable regardless of scroll position, docked above the tab bar */}
+        <button onClick={openAddSheet} aria-label={S.feed.logFeed} style={{position:"fixed",bottom:"calc(90px + env(safe-area-inset-bottom,0px))",insetInlineEnd:20,zIndex:200,width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 6px 24px rgba(249,115,22,.45)"}}>
+          <IconPlus size={24}/>
+        </button>
       </div>
     );
   }
 
-  function FeedRow({f,T,S,typeEmoji,lang,dayColor}){
-    const hasBoth=f.prepared&&f.amount&&f.prepared!==f.amount;
-    const singleMl=f.amount??f.prepared;
-    const finished=f.prepared&&f.amount&&f.amount>=f.prepared;
+  function FeedRow({f,T,S,typeEmoji,lang,dayColor,onQuickAdd}){
+    const[expanded,setExpanded]=useState(false);
+    const isBottle=f.type==="bottle";
+    const sittings=isBottle?bottleSittingsOf(f):null;
+    const totalMl=isBottle?bottleTotalMl(f):null;
+    const multiSitting=isBottle&&sittings.length>1;
+    const hasBoth=isBottle?(f.prepared&&totalMl&&f.prepared!==totalMl):(f.prepared&&f.amount&&f.prepared!==f.amount);
+    const singleMl=isBottle?(totalMl||f.prepared||null):(f.amount??f.prepared);
+    const consumedMl=isBottle?totalMl:f.amount;
+    const finished=isBottle?(f.prepared&&totalMl>=f.prepared):(f.prepared&&f.amount&&f.amount>=f.prepared);
     const c=dayColor||"#f97316";
-    return<div style={{display:"flex",alignItems:"center",gap:11,padding:"9px 10px"}}>
-      <div style={{width:32,height:32,borderRadius:11,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:15}}>
-        {typeEmoji[f.type]||"🍼"}
-      </div>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13.5,fontWeight:700,color:T.text,flexWrap:"wrap"}}>
-          <span>{fmtTime(f.start)}</span>
-          <span style={{color:T.sub,fontWeight:500,fontSize:12}}>· {S.feed.types[f.type]}</span>
-          {singleMl?<span style={{fontSize:12,color:T.sub,fontWeight:600}}>{hasBoth?`${f.amount}/${f.prepared}ml`:`${singleMl}ml`}</span>:null}
-          {finished&&<span style={{color:T.feedColor,fontWeight:800}}>✓</span>}
+    const toggleExpand=e=>{e.stopPropagation();haptic(6);setExpanded(v=>!v);};
+    const quickAdd=e=>{e.stopPropagation();haptic(8);onQuickAdd?.(f);};
+    return<div>
+      <div style={{display:"flex",alignItems:"center",gap:11,padding:"9px 10px"}}>
+        <div style={{width:32,height:32,borderRadius:11,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:15}}>
+          {typeEmoji[f.type]||"🍼"}
         </div>
-        <div style={{fontSize:11,color:T.sub,marginTop:1}}>{new Date(f.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</div>
-        {f.note&&<div style={{fontSize:11.5,color:T.muted,marginTop:3,fontStyle:"italic",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>"{f.note}"</div>}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13.5,fontWeight:700,color:T.text,flexWrap:"wrap"}}>
+            <span>{fmtTime(f.start)}</span>
+            <span style={{color:T.sub,fontWeight:500,fontSize:12}}>· {S.feed.types[f.type]}</span>
+            {singleMl?<span style={{fontSize:12,color:T.sub,fontWeight:600}}>{hasBoth?`${consumedMl}/${f.prepared}ml`:`${singleMl}ml`}</span>:null}
+            {finished&&<span style={{color:T.feedColor,fontWeight:800}}>✓</span>}
+            {multiSitting&&(
+              <button onClick={toggleExpand} style={{fontSize:11,fontWeight:800,color:T.feedColor,background:`${c}22`,border:"none",borderRadius:8,padding:"2px 7px",lineHeight:1.4}}>
+                ×{sittings.length}{expanded?" ▲":" ▾"}
+              </button>
+            )}
+          </div>
+          <div style={{fontSize:11,color:T.sub,marginTop:1}}>{new Date(f.start).toLocaleDateString(lang==="he"?"he-IL":"en-US",{day:"numeric",month:"short"})}</div>
+          {f.note&&<div style={{fontSize:11.5,color:T.muted,marginTop:3,fontStyle:"italic",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>"{f.note}"</div>}
+        </div>
+        {isBottle&&onQuickAdd&&(
+          <button onClick={quickAdd} aria-label="+" style={{flexShrink:0,width:28,height:28,borderRadius:9,background:`${c}22`,border:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <IconPlus size={14} color={c}/>
+          </button>
+        )}
       </div>
+      {multiSitting&&expanded&&(
+        <div style={{paddingInlineStart:53,paddingInlineEnd:10,paddingBottom:9,display:"flex",flexDirection:"column",gap:3}}>
+          {sittings.map(s=>(
+            <div key={s.id} style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:T.sub}}>
+              <span>{fmtTime(s.start)}</span>
+              <span>{s.amount!=null?`${s.amount}ml`:"—"}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>;
   }
 
@@ -2169,8 +2341,16 @@
     lines.push("");
     lines.push(lang==="he"?"נתוני האכלה":"Feed Entries");
     lines.push(["DateTime","Type","Prepared (ml)","Consumed (ml)","Note"].map(csvEsc).join(","));
-    [...feeds].sort((a,b)=>a.start-b.start).forEach(f=>{
-      lines.push([new Date(f.start).toISOString(),f.type,f.prepared??"",f.amount??"",f.note??""].map(csvEsc).join(","));
+    const feedRows=[];
+    feeds.forEach(f=>{
+      if(f.type==="bottle"){
+        bottleSittingsOf(f).forEach(s=>feedRows.push({ts:s.start,type:"bottle",prepared:f.prepared??"",consumed:s.amount??"",note:f.note??""}));
+      } else {
+        feedRows.push({ts:f.start,type:f.type,prepared:"",consumed:f.amount??"",note:f.note??""});
+      }
+    });
+    feedRows.sort((a,b)=>a.ts-b.ts).forEach(r=>{
+      lines.push([new Date(r.ts).toISOString(),r.type,r.prepared,r.consumed,r.note].map(csvEsc).join(","));
     });
     lines.push("");
     lines.push(lang==="he"?"נתוני משקל":"Weight Entries");
