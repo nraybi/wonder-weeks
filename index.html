@@ -690,7 +690,7 @@
   // App version shown in the About sheet — bump on every meaningful
   // index.html change. Independent of sw.js's CACHE_NAME, which only
   // controls asset caching, not user-visible versioning.
-  const APP_VERSION = "1.6.0";
+  const APP_VERSION = "1.6.2";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -914,6 +914,14 @@
   function fmtTime(ts){return new Date(ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",hour12:false});}
   function dayKey(ts){const d=new Date(ts);return`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;}
   function startOfDay(ts){const d=new Date(ts);d.setHours(0,0,0,0);return d.getTime();}
+  // Which calendar day a timestamp counts toward once pre-dawn sleeps are folded
+  // into "last night" — same rule as morningWakeTs: anything before that day's
+  // sunrise belongs to the previous day's bucket.
+  function sunriseDayStart(ts,sunriseMin){
+    const ds=startOfDay(ts);
+    const sunriseTs=ds+(sunriseMin??360)*60000;
+    return ts<sunriseTs?ds-86400000:ds;
+  }
   function minutesInDay(ts){const d=new Date(ts);return d.getHours()*60+d.getMinutes();}
   // datetime-local input helpers (values are interpreted/produced in LOCAL time)
   function tsToDateStr(ts){const d=new Date(ts);const p=n=>String(n).padStart(2,"0");return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
@@ -1656,14 +1664,19 @@
     const activeSleep=sleeps.find(s=>!s.end);
     const todayStart=startOfDay(Date.now());
 
-    // Find the most recent overnight sleep (start/end on different calendar days)
-    // and use ITS wake time as the boundary for "today's sleep" — this is more
-    // meaningful for babies than a rigid midnight cutoff.
+    // The "night sleep" is the last sleep that started before sunrise — i.e. there is
+    // no later sleep that also started before sunrise. Its wake time is the boundary
+    // for "today's sleep". This is more meaningful for babies than a rigid midnight
+    // cutoff, since a night sleep can start well before or after midnight itself.
     const morningWakeTs=useMemo(()=>{
-      const overnightSleeps=sleeps.filter(s=>s.end&&dayKey(s.start)!==dayKey(s.end)&&s.end<=now);
-      if(!overnightSleeps.length)return todayStart;
-      return overnightSleeps.reduce((latest,s)=>s.end>latest?s.end:latest,0);
-    },[sleeps,now]);
+      const sunriseTs=startOfDay(now)+(sunTimes?.sunriseMin??360)*60000;
+      const preSunrise=sleeps.filter(s=>s.start<sunriseTs);
+      if(!preSunrise.length)return todayStart;
+      const lastNightSleep=preSunrise.reduce((a,b)=>b.start>a.start?b:a);
+      // Still asleep pre-dawn — no wake time yet, so "today" hasn't started.
+      if(!lastNightSleep.end)return Infinity;
+      return lastNightSleep.end;
+    },[sleeps,now,sunTimes]);
 
     const todaySleeps=sleeps.filter(s=>s.start>=morningWakeTs);
     const totalTodayMs=todaySleeps.reduce((acc,s)=>{const dur=s.end?s.end-s.start:now-s.start;return acc+dur;},0);
@@ -1795,8 +1808,9 @@
                 const groups=[];
                 const map={};
                 recentSleeps.forEach(s=>{
-                  const k=dayKey(s.start);
-                  if(!(k in map)){map[k]={dayStart:startOfDay(s.start),entries:[]};groups.push(map[k]);}
+                  const dayStart=sunriseDayStart(s.start,sunTimes?.sunriseMin);
+                  const k=dayKey(dayStart);
+                  if(!(k in map)){map[k]={dayStart,entries:[]};groups.push(map[k]);}
                   map[k].entries.push(s);
                 });
                 return<div style={{display:"flex",flexDirection:"column",gap:2}}>

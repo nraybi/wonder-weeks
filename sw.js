@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wonder-weeks-v33';
+const CACHE_NAME = 'wonder-weeks-v35';
 
 const ASSETS_TO_CACHE = [
   '.',
