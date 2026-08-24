@@ -690,7 +690,7 @@
   // App version shown in the About sheet — bump on every meaningful
   // index.html change. Independent of sw.js's CACHE_NAME, which only
   // controls asset caching, not user-visible versioning.
-  const APP_VERSION = "1.6.2";
+  const APP_VERSION = "1.6.3";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -745,6 +745,7 @@
         yes:"כן, מחק",no:"ביטול",
         weight:"משקל התינוק",weightKg:"משקל (ק\"ג)",updateWeight:"עדכן משקל",
         noWeight:"טרם הוזן משקל",recordedOn:"נמדד ב־",
+        exportData:"ייצוא נתונים ל-CSV",exportSleep:"ייצוא שינה",exportFeed:"ייצוא האכלה",exportWeight:"ייצוא משקל",
       },
     },
     en:{
@@ -798,6 +799,7 @@
         yes:"Yes, delete",no:"Cancel",
         weight:"Baby's Weight",weightKg:"Weight (kg)",updateWeight:"Update Weight",
         noWeight:"No weight recorded yet",recordedOn:"as of",
+        exportData:"Export Data to CSV",exportSleep:"Export Sleep",exportFeed:"Export Feed",exportWeight:"Export Weight",
       },
     },
   };
@@ -2464,17 +2466,26 @@
     const s=String(v);
     return/[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
   }
-  function buildCSV(sleeps,feeds,weights,lang){
-    const lines=[];
-    lines.push(lang==="he"?"נתוני שינה":"Sleep Entries");
-    lines.push(["Start","End","Duration (min)"].map(csvEsc).join(","));
+  // Local (wall-clock) ISO 8601 string, e.g. "2026-08-19T14:30:00" — deliberately
+  // NOT toISOString(), which always converts to UTC first and would silently
+  // shift every exported timestamp by the device's UTC offset.
+  function toLocalISO(ts){
+    const d=new Date(ts);
+    const p=n=>String(n).padStart(2,"0");
+    return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+  // Three independent exports — one file per data type, no calculated/derived
+  // columns (e.g. no sleep duration), local ISO 8601 timestamps, UTF-8 BOM so
+  // Hebrew notes render correctly when opened in Excel.
+  function buildSleepCSV(sleeps){
+    const lines=[["Start","End"].map(csvEsc).join(",")];
     [...sleeps].sort((a,b)=>a.start-b.start).forEach(s=>{
-      const durMin=s.end?Math.round((s.end-s.start)/60000):"";
-      lines.push([new Date(s.start).toISOString(),s.end?new Date(s.end).toISOString():"",durMin].map(csvEsc).join(","));
+      lines.push([toLocalISO(s.start),s.end?toLocalISO(s.end):""].map(csvEsc).join(","));
     });
-    lines.push("");
-    lines.push(lang==="he"?"נתוני האכלה":"Feed Entries");
-    lines.push(["DateTime","Type","Prepared (ml)","Consumed (ml)","Note"].map(csvEsc).join(","));
+    return"\uFEFF"+lines.join("\n");
+  }
+  function buildFeedCSV(feeds){
+    const lines=[["DateTime","Type","Prepared (ml)","Consumed (ml)","Note"].map(csvEsc).join(",")];
     const feedRows=[];
     feeds.forEach(f=>{
       if(f.type==="bottle"){
@@ -2484,13 +2495,14 @@
       }
     });
     feedRows.sort((a,b)=>a.ts-b.ts).forEach(r=>{
-      lines.push([new Date(r.ts).toISOString(),r.type,r.prepared,r.consumed,r.note].map(csvEsc).join(","));
+      lines.push([toLocalISO(r.ts),r.type,r.prepared,r.consumed,r.note].map(csvEsc).join(","));
     });
-    lines.push("");
-    lines.push(lang==="he"?"נתוני משקל":"Weight Entries");
-    lines.push(["Date","Weight (kg)"].map(csvEsc).join(","));
+    return"\uFEFF"+lines.join("\n");
+  }
+  function buildWeightCSV(weights){
+    const lines=[["Date","Weight (kg)"].map(csvEsc).join(",")];
     [...weights].sort((a,b)=>a.date-b.date).forEach(w=>{
-      lines.push([new Date(w.date).toISOString(),w.kg].map(csvEsc).join(","));
+      lines.push([toLocalISO(w.date),w.kg].map(csvEsc).join(","));
     });
     return"\uFEFF"+lines.join("\n");
   }
@@ -2517,24 +2529,51 @@
   }
 
   // ─── EXPORT SECTION ──────────────────────────────────────────────────────────
+  // Opens a bottom sheet (consistent with the rest of the app's sheet pattern)
+  // offering three independent CSV exports — sleep, feed, weight — each its
+  // own file/download, rather than one combined multi-section CSV.
   function ExportSection({T,S,lang,babyName,birthDate}){
-    const doExport=()=>{
+    const[sheetOpen,setSheetOpen]=useState(false);
+
+    const doExport=(type)=>{
       haptic(10);
-      const sleeps=loadLS("ww_sleeps",[]);
-      const feeds=loadLS("ww_feeds",[]);
-      const weights=loadLS("ww_weights",[]);
-      const csv=buildCSV(sleeps,feeds,weights,lang);
       const namePart=sanitizeFilePart(babyName)||"baby";
       const dobPart=birthDate||"unknown-dob";
       const todayPart=tsToDateStr(Date.now());
-      const filename=`wonder-weeks-${namePart}-dob-${dobPart}-export-${todayPart}.csv`;
+      let csv;
+      if(type==="sleep")csv=buildSleepCSV(loadLS("ww_sleeps",[]));
+      else if(type==="feed")csv=buildFeedCSV(loadLS("ww_feeds",[]));
+      else csv=buildWeightCSV(loadLS("ww_weights",[]));
+      const filename=`wonder-weeks-${namePart}-dob-${dobPart}-${type}-${todayPart}.csv`;
       downloadFile(csv,filename,"text/csv;charset=utf-8;");
+      setSheetOpen(false);
     };
+
     return(
-      <button onClick={doExport} style={{padding:14,background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:16,color:T.text,fontSize:13.5,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-        {lang==="he"?"ייצוא נתונים ל-CSV":"Export Data to CSV"}
-      </button>
+      <>
+        <button onClick={()=>{haptic(8);setSheetOpen(true);}} style={{padding:14,background:T.surface,border:`1px solid ${T.surfaceB}`,borderRadius:16,color:T.text,fontSize:13.5,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          <span style={{display:"flex",alignItems:"center",gap:8}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+            {S.settings.exportData}
+          </span>
+          <span style={{color:T.sub,fontSize:13}}>▾</span>
+        </button>
+
+        <BottomSheet open={sheetOpen} onClose={()=>setSheetOpen(false)} T={T}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:16,textAlign:"center"}}>{S.settings.exportData}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <button onClick={()=>doExport("sleep")} style={{padding:14,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.text,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",gap:10}}>
+              <IconMoonZzz size={18} color={T.sleepColor}/>{S.settings.exportSleep}
+            </button>
+            <button onClick={()=>doExport("feed")} style={{padding:14,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.text,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",gap:10}}>
+              <IconBottle size={18} color={T.feedColor}/>{S.settings.exportFeed}
+            </button>
+            <button onClick={()=>doExport("weight")} style={{padding:14,background:T.surface2,border:`1px solid ${T.surface2B}`,borderRadius:14,color:T.text,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",gap:10}}>
+              <IconScale size={18} color={T.text}/>{S.settings.exportWeight}
+            </button>
+          </div>
+        </BottomSheet>
+      </>
     );
   }
 
