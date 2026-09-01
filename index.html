@@ -690,7 +690,7 @@
   // App version shown in the About sheet — bump on every meaningful
   // index.html change. Independent of sw.js's CACHE_NAME, which only
   // controls asset caching, not user-visible versioning.
-  const APP_VERSION = "1.6.3";
+  const APP_VERSION = "1.7.0";
 
   // ─── STRINGS (i18n) ──────────────────────────────────────────────────────────
   const LANG={
@@ -721,7 +721,7 @@
         days:["א","ב","ג","ד","ה","ו","ש"],
         patternTitle:"תבנית שינה — 7 ימים",
         stats:"סטטיסטיקות",avgBedtime:"ממוצע כניסה לשינה",
-        naiveNote:"התחזית מבוססת על שינות אתמול",
+        naiveNote:"התחזית מבוססת על התאמת משכי שינה קודמים",
       },
       feed:{
         title:"מעקב האכלה",logFeed:"תעד ארוחה",
@@ -775,7 +775,7 @@
         days:["Su","Mo","Tu","We","Th","Fr","Sa"],
         patternTitle:"Sleep Pattern — 7 Days",
         stats:"Statistics",avgBedtime:"Avg bedtime",
-        naiveNote:"Prediction based on yesterday's pattern",
+        naiveNote:"Prediction based on matching past nap lengths",
       },
       feed:{
         title:"Feed Tracker",logFeed:"Log Feed",
@@ -975,6 +975,150 @@
       sunriseMin:riseUT!==null?utToLocalMin(riseUT):360,
       sunsetMin:setUT!==null?utToLocalMin(setUT):1200,
     };
+  }
+
+  // ─── DAY BOUNDARY (shared by SleepTab's "today" stats and the wake-window
+  // predictor below — one definition of "which sleep is the night sleep") ──
+
+  // A completed sleep longer than this is almost certainly a stuck/forgotten
+  // active session force-closed much later, not a real sleep event. Excluded
+  // from day-boundary and predictor logic (kept as-is everywhere else —
+  // history list, CSV export, stats — this only affects boundary detection).
+  function isImplausibleSleep(s){return!!s.end&&(s.end-s.start)>18*3600000;}
+
+  // Night if: starts before sunrise, or at/after sunset (no duration
+  // threshold — nothing starting after sunset is ever "just a nap"), or
+  // runs long enough (>4.5h) to be night regardless of start time.
+  function isNightSleep(s,sunriseMin,sunsetMin){
+    const startMin=minutesInDay(s.start);
+    const durHours=((s.end??Date.now())-s.start)/3600000;
+    return startMin<(sunriseMin??360)||startMin>=(sunsetMin??1200)||durHours>4.5;
+  }
+
+  // Morning wake for the day `refTs` falls in = end of the last sleep that
+  // started before that morning's sunrise and is classified as night.
+  // Falls back to sunrise itself when nothing qualifies (missing night in
+  // the log, or no data yet). Returns Infinity if still asleep pre-dawn —
+  // "today" hasn't started yet.
+  function computeMorningWake(sleeps,refTs,sunTimes){
+    const sunriseMin=sunTimes?.sunriseMin??360,sunsetMin=sunTimes?.sunsetMin??1200;
+    const sunriseTs=startOfDay(refTs)+sunriseMin*60000;
+    const candidates=sleeps.filter(s=>!isImplausibleSleep(s)&&s.start<sunriseTs&&isNightSleep(s,sunriseMin,sunsetMin));
+    if(!candidates.length)return sunriseTs;
+    const last=candidates.reduce((a,b)=>b.start>a.start?b:a);
+    if(!last.end)return Infinity;
+    return last.end;
+  }
+
+  // ─── WAKE-WINDOW PREDICTOR (State EWMA) ────────────────────────────────
+  // Index-free, duration-matched EWMA — see wake-window-estimator.js for the
+  // validated standalone version this was ported from (~18.8min MAE
+  // backtest, excl. cold-start days). Predicts one wake window at a time;
+  // does not project further ahead (no multi-nap forecast).
+  const WW_PARAMS={halfLifeDays:10,durSigmaMin:20,defaultNapDurMin:80,blend:.9,clipLoMin:60,clipHiMin:280,neutralDefaultMin:140};
+
+  function wwDaysAgo(todayKey,dKey){
+    const[ty,tm,td]=todayKey.split("-").map(Number);
+    const[dy,dm,dd]=dKey.split("-").map(Number);
+    return Math.round((Date.UTC(ty,tm,td)-Date.UTC(dy,dm,dd))/86400000);
+  }
+
+  function ewmaFreeWW(history,todayKey,prevDur,p=WW_PARAMS){
+    let wSum=0,wwSum=0;
+    if(prevDur===null){
+      for(const d of history){
+        if(!d.daySleeps.length)continue;
+        const ww=(d.daySleeps[0].start-d.morningWake)/60000;
+        const w=Math.pow(.5,wwDaysAgo(todayKey,d.dateKey)/p.halfLifeDays);
+        wSum+=w;wwSum+=w*ww;
+      }
+    }else{
+      for(const d of history){
+        const recency=Math.pow(.5,wwDaysAgo(todayKey,d.dateKey)/p.halfLifeDays);
+        for(let k=1;k<d.daySleeps.length;k++){
+          const prevNap=d.daySleeps[k-1],nextNap=d.daySleeps[k];
+          const prevNapDur=(prevNap.end-prevNap.start)/60000;
+          const ww=(nextNap.start-prevNap.end)/60000;
+          const w=recency*Math.exp(-((prevNapDur-prevDur)**2)/(2*p.durSigmaMin**2));
+          wSum+=w;wwSum+=w*ww;
+        }
+      }
+    }
+    const pred=wSum>0?wwSum/wSum:p.neutralDefaultMin;
+    return Math.min(p.clipHiMin,Math.max(p.clipLoMin,pred));
+  }
+
+  // Segments the full sleep history into days ({dateKey,morningWake,
+  // daySleeps}), reusing computeMorningWake per calendar day so the
+  // predictor's training data uses the exact same boundary as "today"'s
+  // live stats. Splits a day further on any internal gap too large to be a
+  // real wake window (>400min) — that signals a missing/unlogged night
+  // rather than one very long wake window; the sub-group after the gap is
+  // re-anchored to that day's sunrise rather than chained to a morning
+  // wake it didn't actually follow.
+  // Segments the full sleep history into days — direct port of buildDays +
+  // splitOnAnomalousGaps from wake-window-estimator.js (the version actually
+  // backtested: ~18.8min MAE excl. cold-start days), not a reimplementation.
+  // Segment-based, not calendar-day iteration: it never needs to know when a
+  // day *ends* to start recording it, so today's in-progress naps are
+  // captured the same way as any completed day — no separate "still open"
+  // case needed.
+  function buildSleepDays(sleeps,sunTimes){
+    const sunriseMin=sunTimes?.sunriseMin??360,sunsetMin=sunTimes?.sunsetMin??1200;
+    const sorted=sleeps.filter(s=>s.end&&!isImplausibleSleep(s)).sort((a,b)=>a.start-b.start);
+    if(!sorted.length)return[];
+
+    const segments=[];
+    let i=0;
+    while(i<sorted.length){
+      const night=isNightSleep(sorted[i],sunriseMin,sunsetMin);
+      let j=i+1;
+      while(j<sorted.length&&isNightSleep(sorted[j],sunriseMin,sunsetMin)===night)j++;
+      segments.push({night,items:sorted.slice(i,j)});
+      i=j;
+    }
+
+    // Morning wake = end of the last sleep in the night group that started
+    // before sunrise+1h (absolute instant, not time-of-day — a normal
+    // evening bedtime must count as "before" next morning's sunrise). Falls
+    // back to sunrise itself if nothing in the group qualifies (log gap).
+    function morningWakeOf(nightItems){
+      const referenceTs=nightItems[nightItems.length-1].end;
+      const threshold=startOfDay(referenceTs)+sunriseMin*60000+60*60000;
+      const candidates=nightItems.filter(s=>s.start<threshold);
+      if(candidates.length)return candidates.reduce((a,b)=>b.start>a.start?b:a).end;
+      return startOfDay(referenceTs)+sunriseMin*60000;
+    }
+
+    const days=[];
+    let pendingNightItems=null;
+    for(const seg of segments){
+      if(seg.night){pendingNightItems=seg.items;}
+      else{
+        const morningWake=pendingNightItems?morningWakeOf(pendingNightItems):startOfDay(seg.items[0].start)+sunriseMin*60000;
+        days.push({dateKey:dayKey(morningWake),morningWake,daySleeps:seg.items.slice().sort((a,b)=>a.start-b.start)});
+        pendingNightItems=null;
+      }
+    }
+
+    // Split a day-group on any internal gap too large to be a real wake
+    // window (>400min) — that means a night sleep was missing from the log
+    // entirely; the sub-group after the gap is re-anchored to that day's
+    // sunrise rather than chained to a morning wake it didn't follow.
+    const out=[];
+    for(const day of days){
+      let start=0,morningWake=day.morningWake;
+      for(let k=1;k<=day.daySleeps.length;k++){
+        const atEnd=k===day.daySleeps.length;
+        const gapMin=atEnd?0:(day.daySleeps[k].start-day.daySleeps[k-1].end)/60000;
+        if(atEnd||gapMin>400){
+          out.push({dateKey:day.dateKey,morningWake,daySleeps:day.daySleeps.slice(start,k)});
+          start=k;
+          if(!atEnd)morningWake=startOfDay(day.daySleeps[k].start)+sunriseMin*60000;
+        }
+      }
+    }
+    return out;
   }
 
   // ─── THEME ───────────────────────────────────────────────────────────────────
@@ -1454,21 +1598,23 @@
 
   // ─── CIRCULAR TIMELINE CANVAS ───────────────────────────────────────────────
   // Capsule sleep blocks sit ON the arc; dashed = predicted; solid = logged
-  function CircularTimeline({sleeps,activeSleep,nextPred,now,onToggle,S,lang,sunTimes}){
+  function CircularTimeline({sleeps,activeSleep,nextPred,now,onToggle,S,lang,sunTimes,morningWakeTs}){
     const sunriseMin=sunTimes?.sunriseMin??360;
     const sunsetMin=sunTimes?.sunsetMin??1200;
     const canvasRef=useRef(null);
     const SIZE=320;
     const CX=SIZE/2, CY=SIZE/2;
     const R=118; // track radius
-    const todayStart=startOfDay(Date.now());
-    const dayEndTs=todayStart+86400000;
-    // Include sleeps that overlap today's 24h window — not just ones that started today —
-    // so an overnight sleep (start yesterday evening, end this morning) draws in full.
-    const todaySleeps=sleeps.filter(s=>{
-      const sEnd=s.end||now;
-      return s.start<dayEndTs && sEnd>=todayStart;
-    });
+    // Same boundary as everywhere else (computeMorningWake) — not calendar
+    // midnight — so the dial agrees with today's stats and the predictor on
+    // where "today" starts. Falls back to calendar midnight only while
+    // still asleep pre-dawn (morningWakeTs===Infinity, no real boundary yet).
+    const windowStart=(morningWakeTs&&morningWakeTs!==Infinity)?morningWakeTs:startOfDay(now);
+    const windowEnd=windowStart+86400000;
+    // Strictly sleeps that started within today's window — nothing from
+    // before the boundary, even if it's still ongoing or ends after it, per
+    // explicit instruction: no previous day/night sleep on the dial at all.
+    const todaySleeps=sleeps.filter(s=>s.start>=windowStart && s.start<windowEnd);
 
     // minutes-of-day → canvas angle (midnight = top)
     const m2a=m=>(m/1440)*Math.PI*2-Math.PI/2;
@@ -1524,14 +1670,6 @@
         drawArc(sm,em,true,!!activeSleep&&!s.end);
       });
 
-      // ── predicted sleeps (next 2 from yesterday) ──
-      if(nextPred&&nextPred.predictions){
-        nextPred.predictions.forEach(p=>{
-          const durMin=Math.round((p.durMs||5400000)/60000);
-          drawArc(p.startMin, p.startMin+durMin, false, false);
-        });
-      }
-
       // ── sunrise anchor (real local time) ──
       const sunA=m2a(sunriseMin); const sunP=polar(sunA,R);
       ctx.beginPath(); ctx.arc(sunP.x,sunP.y,12,0,Math.PI*2);
@@ -1570,14 +1708,6 @@
         const dur=s.end?s.end-s.start:now-s.start;
         caps.push({x,y,label:fmtTime(s.start),sublabel:fmtDur(dur),solid:true,active:!s.end});
       });
-      if(nextPred?.predictions){
-        nextPred.predictions.slice(0,3).forEach(p=>{
-          const durMin=Math.round((p.durMs||5400000)/60000);
-          const midAngle=m2a(p.startMin+durMin/2);
-          const {x,y}=polar(midAngle,PILL_R);
-          caps.push({x,y,label:fmtTime(new Date(startOfDay(Date.now())+p.startMin*60000)),sublabel:"~"+Math.round(p.durMs/3600000*10)/10+(lang==="he"?"ש׳":"h"),solid:false,active:false});
-        });
-      }
       return caps;
     },[sleeps,now,nextPred]);
 
@@ -1621,13 +1751,11 @@
             </>
           ):(
             <>
-              {nextPred&&nextPred.predictions?.length?(
+              {nextPred?(
                 <>
                   <div style={{fontSize:11,color:"rgba(196,181,253,.55)",fontWeight:500,textAlign:"center",lineHeight:1.3}}>{lang==="he"?"שינה הבאה בעוד":"Next nap in"}</div>
                   <div style={{fontSize:46,fontWeight:900,color:"#fff",lineHeight:1,letterSpacing:"-.03em"}}>
-                    {nextPred.predictions[0].minsFromNow<60
-                      ?nextPred.predictions[0].minsFromNow+(lang==="he"?"ד׳":" min")
-                      :(Math.round(nextPred.predictions[0].minsFromNow/6)/10)+(lang==="he"?"ש׳":" hr")}
+                    {Math.round(nextPred.remaining)+(lang==="he"?"ד׳":" min")}
                   </div>
                   <button onClick={onToggle} style={{marginTop:8,padding:"7px 20px",background:"rgba(99,102,241,.18)",border:"1px solid rgba(139,92,246,.4)",borderRadius:999,color:"#c4b5fd",fontSize:11,fontWeight:700}}>
                     {lang==="he"?"ישן עכשיו":"Sleep now"}
@@ -1666,36 +1794,35 @@
     const activeSleep=sleeps.find(s=>!s.end);
     const todayStart=startOfDay(Date.now());
 
-    // The "night sleep" is the last sleep that started before sunrise — i.e. there is
-    // no later sleep that also started before sunrise. Its wake time is the boundary
-    // for "today's sleep". This is more meaningful for babies than a rigid midnight
-    // cutoff, since a night sleep can start well before or after midnight itself.
-    const morningWakeTs=useMemo(()=>{
-      const sunriseTs=startOfDay(now)+(sunTimes?.sunriseMin??360)*60000;
-      const preSunrise=sleeps.filter(s=>s.start<sunriseTs);
-      if(!preSunrise.length)return todayStart;
-      const lastNightSleep=preSunrise.reduce((a,b)=>b.start>a.start?b:a);
-      // Still asleep pre-dawn — no wake time yet, so "today" hasn't started.
-      if(!lastNightSleep.end)return Infinity;
-      return lastNightSleep.end;
-    },[sleeps,now,sunTimes]);
+    // The "night sleep" is the last sleep that started before sunrise and is
+    // classified as night — see computeMorningWake, shared with the
+    // wake-window predictor below. Its wake time is the boundary for
+    // "today's sleep". This is more meaningful for babies than a rigid
+    // midnight cutoff, since a night sleep can start well before or after
+    // midnight itself.
+    const morningWakeTs=useMemo(()=>computeMorningWake(sleeps,now,sunTimes),[sleeps,now,sunTimes]);
 
     const todaySleeps=sleeps.filter(s=>s.start>=morningWakeTs);
     const totalTodayMs=todaySleeps.reduce((acc,s)=>{const dur=s.end?s.end-s.start:now-s.start;return acc+dur;},0);
-    const nowMin=minutesInDay(now);
-    const yesterday=sleeps.filter(s=>s.start>=todayStart-86400000&&s.start<todayStart);
 
+    // Single next-wake-window prediction (State EWMA) — see
+    // wake-window-estimator.js for the validated standalone version. Only
+    // ever predicts the *next* transition, no multi-nap forecast.
     const nextSleepPred=useMemo(()=>{
-      if(activeSleep)return null;
-      const future=yesterday.filter(s=>s.end&&minutesInDay(s.start)>nowMin).sort((a,b)=>minutesInDay(a.start)-minutesInDay(b.start));
-      if(!future.length)return null;
-      const predictions=future.slice(0,3).map(s=>({
-        startMin:minutesInDay(s.start),
-        minsFromNow:minutesInDay(s.start)-nowMin,
-        durMs:s.end-s.start,
-      }));
-      return{predictions};
-    },[sleeps,now]);
+      if(activeSleep||morningWakeTs===Infinity)return null;
+      const allDays=buildSleepDays(sleeps,sunTimes);
+      const todayKeyStr=dayKey(morningWakeTs);
+      const history=allDays.filter(d=>d.dateKey!==todayKeyStr);
+      const todayGroup=allDays.find(d=>d.dateKey===todayKeyStr);
+      let cursor=morningWakeTs,estPrevDur=null;
+      if(todayGroup)for(const nap of todayGroup.daySleeps){
+        estPrevDur=WW_PARAMS.blend*((nap.end-nap.start)/60000)+(1-WW_PARAMS.blend)*WW_PARAMS.defaultNapDurMin;
+        cursor=nap.end;
+      }
+      const predictedWW=ewmaFreeWW(history,todayKeyStr,estPrevDur,WW_PARAMS);
+      const elapsed=Math.max(0,(now-cursor)/60000);
+      return{remaining:Math.max(0,predictedWW-elapsed),predictedWW};
+    },[sleeps,now,sunTimes,morningWakeTs,activeSleep]);
 
     const avgDurMs=useMemo(()=>{
       const finished=sleeps.filter(s=>s.end).slice(-14);
@@ -1779,7 +1906,7 @@
       <div style={{display:"flex",flexDirection:"column",gap:14,padding:"0 0 76px"}}>
         {/* Circular timeline hero */}
         <div style={{background:"linear-gradient(135deg,#0d0f2b,#151832)",borderRadius:16,padding:"20px 0 16px",border:"1px solid rgba(99,102,241,.2)",boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}>
-          <CircularTimeline sleeps={sleeps} activeSleep={activeSleep} nextPred={nextSleepPred} now={now} onToggle={toggleSleep} S={S} lang={lang} sunTimes={sunTimes}/>
+          <CircularTimeline sleeps={sleeps} activeSleep={activeSleep} nextPred={nextSleepPred} now={now} onToggle={toggleSleep} S={S} lang={lang} sunTimes={sunTimes} morningWakeTs={morningWakeTs}/>
           {/* Sunrise/sunset markers (real local times if available) */}
           <div style={{display:"flex",justifyContent:"center",gap:32,marginTop:12}}>
             <div style={{textAlign:"center"}}><div style={{fontSize:20}}>🌅</div><div style={{fontSize:11,color:"rgba(251,146,60,.8)",fontWeight:700,marginTop:2}}>{sunTimes?fmtTime(startOfDay(Date.now())+sunTimes.sunriseMin*60000):"06:00"}</div></div>
@@ -1792,7 +1919,7 @@
         {/* Stats row */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <StatCard icon="🌙" label={S.sleep.totalToday} value={totalTodayMs>0?fmtDur(totalTodayMs):"—"} sub={avgDurMs?`${S.sleep.avgDuration}: ${fmtDur(avgDurMs)}`:""} T={T}/>
-          <StatCard icon="📊" label={S.sleep.nextSleep} value={nextSleepPred?.predictions?.[0]?(nextSleepPred.predictions[0].minsFromNow<60?nextSleepPred.predictions[0].minsFromNow+(lang==="he"?"ד׳":"m"):Math.round(nextSleepPred.predictions[0].minsFromNow/60)+(lang==="he"?"ש׳":"h")):"—"} sub={nextSleepPred?.predictions?.[0]?("~"+fmtDur(nextSleepPred.predictions[0].durMs)):S.sleep.naiveNote} T={T}/>
+          <StatCard icon="📊" label={S.sleep.nextSleep} value={nextSleepPred?Math.round(nextSleepPred.remaining)+(lang==="he"?"ד׳":"m"):"—"} sub={S.sleep.naiveNote} T={T}/>
         </div>
 
         {/* 7-day pattern */}
